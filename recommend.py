@@ -8,6 +8,7 @@ import os, glob, csv, time, warnings
 import pandas as pd
 import requests
 from datetime import date
+from pathlib import Path
 
 warnings.filterwarnings("ignore")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -199,6 +200,21 @@ def main():
 
     print(f"{'='*55}")
     print(f"說明：第1推薦為最佳，第2~5為次選（條件未全符合，供參考）")
+
+    # 自動幫推薦股票畫 K 線圖
+    print(f"\n📊 產生 K 線圖中...")
+    import subprocess, sys
+    chart_script = Path(__file__).parent / "chart_draw.py"
+    for _, r in df.head(5).iterrows():
+        code = str(r['代號'])
+        result = subprocess.run(
+            [sys.executable, str(chart_script), code],
+            capture_output=True, text=True
+        )
+        if "已儲存" in result.stdout:
+            print(f"  ✅ {code} {r['名稱']} → charts/{code}.png")
+        else:
+            print(f"  ⚠️  {code} 圖表產生失敗")
 
 if __name__ == "__main__":
     main()
