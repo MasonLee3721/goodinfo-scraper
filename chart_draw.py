@@ -2,12 +2,11 @@
 自繪 K 線圖：從證交所/櫃買抓資料，用 mplfinance 畫出含均線、KD、MACD 的技術圖
 用法：python3 chart_draw.py 6706
 """
-import sys, warnings, requests, time
+import sys, warnings
 import pandas as pd
 import mplfinance as mpf
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
-from datetime import date, timedelta
 from pathlib import Path
 
 warnings.filterwarnings('ignore')
@@ -23,77 +22,24 @@ STOCK_ID = sys.argv[1] if len(sys.argv) > 1 else '6706'
 OUT_DIR = Path(__file__).parent / 'charts'
 OUT_DIR.mkdir(exist_ok=True)
 
-# ── 抓資料（TWSE 上市 / OTC 上櫃）──────────────────────────────────────────
-def fetch_twse(stock_id, ym):
-    try:
-        url = f"https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?stockNo={stock_id}&date={ym}01&response=json"
-        r = requests.get(url, verify=False, timeout=10)
-        d = r.json()
-        if d.get('stat') != 'OK' or not d.get('data'):
-            return []
-        return d['data']
-    except:
-        return []
-
-def fetch_otc(stock_id, ym):
-    try:
-        y = int(ym[:4]) - 1911
-        m = ym[4:]
-        url = f"https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&d={y}/{m}&stkno={stock_id}"
-        r = requests.get(url, verify=False, timeout=10)
-        d = r.json()
-        return d.get('aaData', [])
-    except:
-        return []
-
-def roc_to_ad(s):
-    """民國年 115/04/01 → 2026-04-01"""
-    p = s.replace('-', '/').split('/')
-    return f"{int(p[0])+1911}-{p[1]}-{p[2]}"
-
+# ── 抓資料（yfinance：上市用 .TW，上櫃用 .TWO）────────────────────────────
 def get_kline(stock_id, months=5):
-    rows = []
-    today = date.today()
-    for i in range(months, -1, -1):
-        d = today - timedelta(days=30 * i)
-        ym = d.strftime('%Y%m')
-        data = fetch_twse(stock_id, ym)
-        if not data:
-            data = fetch_otc(stock_id, ym)
-            if data:
-                # OTC 格式轉換
-                for row in data:
-                    try:
-                        rows.append({
-                            'Date': roc_to_ad(row[0]),
-                            'Open': float(row[3].replace(',', '')),
-                            'High': float(row[4].replace(',', '')),
-                            'Low':  float(row[5].replace(',', '')),
-                            'Close': float(row[6].replace(',', '')),
-                            'Volume': int(row[1].replace(',', '')) // 1000  # 股→張
-                        })
-                    except: pass
-        else:
-            for row in data:
-                try:
-                    rows.append({
-                        'Date': roc_to_ad(row[0]),
-                        'Open': float(row[3].replace(',', '')),
-                        'High': float(row[4].replace(',', '')),
-                        'Low':  float(row[5].replace(',', '')),
-                        'Close': float(row[6].replace(',', '')),
-                        'Volume': int(row[1].replace(',', '')) // 1000  # 股→張
-                    })
-                except: pass
-        time.sleep(0.3)
-
-    if not rows:
-        return None
-
-    df = pd.DataFrame(rows).drop_duplicates('Date')
-    df['Date'] = pd.to_datetime(df['Date'])
-    df = df.sort_values('Date').set_index('Date')
-    return df
+    import yfinance as yf
+    # 先試上市，再試上櫃
+    for suffix in ['.TW', '.TWO']:
+        try:
+            df = yf.download(f'{stock_id}{suffix}', period=f'{months}mo',
+                             interval='1d', progress=False, auto_adjust=True)
+            if df is not None and len(df) >= 20:
+                df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                df['Volume'] = (df['Volume'] // 1000).astype(int)  # 股→張
+                df.index = pd.to_datetime(df.index.date)
+                df.index.name = 'Date'
+                return df
+        except:
+            continue
+    return None
 
 # ── 計算指標 ────────────────────────────────────────────────────────────────
 def calc_rsi(close, n=14):
