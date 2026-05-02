@@ -25,12 +25,15 @@ OUT_DIR.mkdir(exist_ok=True)
 
 # ── 抓資料（TWSE 上市 / OTC 上櫃）──────────────────────────────────────────
 def fetch_twse(stock_id, ym):
-    url = f"https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?stockNo={stock_id}&date={ym}01&response=json"
-    r = requests.get(url, verify=False, timeout=10)
-    d = r.json()
-    if d.get('stat') != 'OK' or not d.get('data'):
+    try:
+        url = f"https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?stockNo={stock_id}&date={ym}01&response=json"
+        r = requests.get(url, verify=False, timeout=10)
+        d = r.json()
+        if d.get('stat') != 'OK' or not d.get('data'):
+            return []
+        return d['data']
+    except:
         return []
-    return d['data']
 
 def fetch_otc(stock_id, ym):
     try:
