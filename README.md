@@ -43,3 +43,25 @@ python3 scrape_goodinfo.py
 ## 注意事項
 
 詳見 [NOTES.md](NOTES.md)
+
+## 每日追蹤流程
+
+### 步驟 1：每天跑一次爬蟲（存成 data/YYYY-MM-DD.csv）
+```bash
+uv run --with requests --with beautifulsoup4 --with lxml python3 scrape_goodinfo.py
+```
+
+### 步驟 2：分析連續買入的股票
+```bash
+# 看所有資料，至少連續 2 天
+uv run --with pandas python3 analyze.py
+
+# 只看最近 5 個交易日，至少連續 3 天
+uv run --with pandas python3 analyze.py --days 5 --min-days 3
+```
+
+### 輸出說明
+- **出現天數**：這支股票在排行榜出現幾天
+- **最新買超幅度**：最新一天的買超佔發行張數 %
+- **平均買超幅度**：這段期間的平均值
+- **趨勢**：📈 增加 / 📉 減少 / ➡️ 持平（與前一天比較）
