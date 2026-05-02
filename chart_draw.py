@@ -165,7 +165,7 @@ def draw_chart(stock_id):
     ax_k.plot(dates, ma60, color='#00cfff', lw=1.2, label='MA60')
     ax_k.set_ylabel('Price', fontsize=9)
     ax_k.legend(loc='upper left', fontsize=8)
-    ax_k.set_title(f'{stock_id} 日K線圖（MA5/20/60、RSI、KD、MACD）', fontsize=12)
+    ax_k.set_title(f'Stock {stock_id}  Daily K-Chart  (MA5/20/60 · RSI · KD · MACD)', fontsize=12, color='#dddddd')
     ax_k.xaxis_date()
 
     # ── 成交量 ──
