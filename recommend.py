@@ -201,18 +201,24 @@ def main():
     print(f"{'='*55}")
     print(f"說明：第1推薦為最佳，第2~5為次選（條件未全符合，供參考）")
 
-    # 自動幫推薦股票畫 K 線圖
+    # 自動幫推薦股票畫 K 線圖並傳到 Discord
     print(f"\n📊 產生 K 線圖中...")
     import subprocess, sys
+    from discord_send import send_image
     chart_script = Path(__file__).parent / "chart_draw.py"
-    for _, r in df.head(5).iterrows():
+    channel_id = os.environ.get("DISCORD_CHANNEL_ID", "1499988458825977978")
+
+    for rank, (_, r) in enumerate(df.head(5).iterrows(), 1):
         code = str(r['代號'])
+        name = r['名稱']
         result = subprocess.run(
             [sys.executable, str(chart_script), code],
             capture_output=True, text=True
         )
-        if "已儲存" in result.stdout:
-            print(f"  ✅ {code} {r['名稱']} → charts/{code}.png")
+        chart_path = Path(__file__).parent / "charts" / f"{code}.png"
+        if chart_path.exists():
+            star = "⭐ 最推薦" if rank == 1 else f"第{rank}推薦"
+            send_image(channel_id, str(chart_path), f"📊 【{star}】{code} {name}")
         else:
             print(f"  ⚠️  {code} 圖表產生失敗")
 
