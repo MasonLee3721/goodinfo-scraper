@@ -58,7 +58,7 @@ def save(headers, data, folder="data"):
 
     if os.path.exists(filepath):
         print(f"今日資料已存在：{filename}，略過")
-        return filename
+        return None
 
     with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
@@ -85,4 +85,5 @@ if __name__ == "__main__":
     html = fetch()
     headers, data = parse(html)
     filename = save(headers, data)
-    git_push(filename)
+    if filename:
+        git_push(filename)
