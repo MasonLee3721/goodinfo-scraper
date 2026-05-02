@@ -166,22 +166,39 @@ def main():
     picks = picks.sort_values(["_sort", "連買天數", "技術分", "買超%"], ascending=[True, False, False, False])
 
     print(f"\n{'='*65}")
-    print(f"🏆 {latest_date} 今日推薦清單（技術面≥4/6）\n")
+    print(f"🏆 {latest_date} 今日推薦清單\n")
 
-    if picks.empty:
-        print("今日無符合所有條件的推薦股票")
-        print("\n各股技術明細（均線多頭/20MA向上/RSI50-80/5日漲/放量/20日新高）：")
-        for _, r in df.iterrows():
-            flags = ("🔥" if r["外資同買"] else "") + ("🆕" if r["首次進榜"] else "")
-            print(f"  {r['代號']} {r['名稱']:<10} 技術{r['技術分']}/6 {r['技術明細']} 買超{r['買超%']:+.2f}% {flags}")
-    else:
-        for _, r in picks.iterrows():
-            flags = ("🔥外資同買 " if r["外資同買"] else "") + ("🆕首次進榜 " if r["首次進榜"] else "")
-            print(f"  {'⭐' if r['排名'] <= 10 else '  '} {r['代號']} {r['名稱']:<10} "
-                  f"買超{r['買超%']:+.2f}%  連買{r['連買天數']}天  技術{r['技術分']}/6  {flags}")
-            print(f"     技術明細：{r['技術明細']}（均線多頭/20MA向上/RSI/5日漲/放量/20日新高）")
+    # 合併所有候選，按分數排序
+    df = df.copy()
+    df["_sort"] = df["外資同買"].apply(lambda x: 0 if x else 1)
+    df = df.sort_values(["_sort", "技術分", "連買天數", "買超%"], ascending=[True, False, False, False]).reset_index(drop=True)
 
-    print(f"\n共推薦 {len(picks)} 支")
+    TECH_LABELS = ["均線多頭排列", "20MA向上", "RSI 50~80", "5日漲幅>0", "放量", "創20日新高"]
+
+    for rank, (_, r) in enumerate(df.head(5).iterrows(), 1):
+        flags = ("🔥外資同買 " if r["外資同買"] else "") + ("🆕首次進榜 " if r["首次進榜"] else "")
+        star = "⭐ 最推薦" if rank == 1 else f"第{rank}推薦"
+
+        print(f"{'─'*55}")
+        print(f"【{star}】{r['代號']} {r['名稱']}  {flags}")
+        print(f"  買超佔股本比：{r['買超%']:+.2f}%  排名：第{r['排名']}名  連買：{r['連買天數']}天")
+        print(f"  技術面：{r['技術分']}/6 條件通過")
+
+        # 列出不符合的條件
+        detail = r["技術明細"]
+        if detail == "資料不足":
+            print(f"  ⚠️  技術面資料不足，無法判斷")
+        else:
+            failed = [TECH_LABELS[i] for i, c in enumerate(detail) if c == "✗"]
+            passed = [TECH_LABELS[i] for i, c in enumerate(detail) if c == "✓"]
+            if passed:
+                print(f"  ✅ 符合：{' / '.join(passed)}")
+            if failed:
+                print(f"  ❌ 不符合：{' / '.join(failed)}")
+        print()
+
+    print(f"{'='*55}")
+    print(f"說明：第1推薦為最佳，第2~5為次選（條件未全符合，供參考）")
 
 if __name__ == "__main__":
     main()
