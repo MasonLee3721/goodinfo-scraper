@@ -43,6 +43,11 @@ def fetch_otc(stock_id, ym):
     except:
         return []
 
+def roc_to_ad(s):
+    """民國年 115/04/01 → 2026-04-01"""
+    p = s.replace('-', '/').split('/')
+    return f"{int(p[0])+1911}-{p[1]}-{p[2]}"
+
 def get_kline(stock_id, months=5):
     rows = []
     today = date.today()
@@ -57,24 +62,24 @@ def get_kline(stock_id, months=5):
                 for row in data:
                     try:
                         rows.append({
-                            'Date': row[0].replace('/', '-'),
+                            'Date': roc_to_ad(row[0]),
                             'Open': float(row[3].replace(',', '')),
                             'High': float(row[4].replace(',', '')),
                             'Low':  float(row[5].replace(',', '')),
                             'Close': float(row[6].replace(',', '')),
-                            'Volume': int(row[1].replace(',', ''))
+                            'Volume': int(row[1].replace(',', '')) // 1000  # 股→張
                         })
                     except: pass
         else:
             for row in data:
                 try:
                     rows.append({
-                        'Date': row[0].replace('/', '-'),
+                        'Date': roc_to_ad(row[0]),
                         'Open': float(row[3].replace(',', '')),
                         'High': float(row[4].replace(',', '')),
                         'Low':  float(row[5].replace(',', '')),
                         'Close': float(row[6].replace(',', '')),
-                        'Volume': int(row[1].replace(',', ''))
+                        'Volume': int(row[1].replace(',', '')) // 1000  # 股→張
                     })
                 except: pass
         time.sleep(0.3)
@@ -168,7 +173,7 @@ def draw_chart(stock_id):
         color = '#ef233c' if row['Close'] >= row['Open'] else '#4cc9f0'
         ax_vol.bar(dates[i], row['Volume'], width=w, color=color, alpha=0.8)
     ax_vol.set_ylabel('量(張)', fontsize=9)
-    ax_vol.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/1000:.0f}萬' if x >= 10000 else f'{x:.0f}'))
+    ax_vol.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/10000:.1f}萬' if x >= 10000 else f'{x:.0f}'))
 
     # ── RSI ──
     ax_rsi.plot(dates, rsi, color='#845ec2', lw=1.2)
