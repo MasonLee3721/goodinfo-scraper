@@ -1,10 +1,12 @@
 """
-爬 goodinfo 投信買超排行，並存成每日 CSV
+爬 goodinfo 投信買超排行，存成每日 CSV 並 push 到 GitHub
 執行：uv run --with requests --with beautifulsoup4 --with lxml python3 scrape_goodinfo.py
 """
-import requests, time, csv, os
+import requests, time, csv, os, subprocess
 from datetime import date
 from bs4 import BeautifulSoup
+
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 
 API = (
     "https://goodinfo.tw/tw2/StockList.asp?STEP=DATA"
@@ -47,27 +49,40 @@ def parse(html):
     return headers, data
 
 def save(headers, data, folder="data"):
-    os.makedirs(folder, exist_ok=True)
-    # 用法人買賣日期當檔名（從第一筆資料取），避免非交易日覆蓋
-    trade_date = data[0][6] if data else str(date.today())  # 欄位6 = 法人買賣日期
-    # 轉成 YYYY-MM-DD 格式（原始是 MM/DD）
+    os.makedirs(os.path.join(REPO_DIR, folder), exist_ok=True)
+    trade_date = data[0][6] if data else str(date.today())
     year = date.today().year
     month, day = trade_date.split("/")
     filename = f"{folder}/{year}-{month}-{day}.csv"
+    filepath = os.path.join(REPO_DIR, filename)
 
-    if os.path.exists(filename):
+    if os.path.exists(filepath):
         print(f"今日資料已存在：{filename}，略過")
         return filename
 
-    with open(filename, "w", newline="", encoding="utf-8-sig") as f:
+    with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(headers)
         writer.writerows(data)
     print(f"已存檔：{filename}（{len(data)} 筆）")
     return filename
 
+def git_push(filename):
+    token = subprocess.check_output(["gh", "auth", "token"], text=True).strip()
+    remote = f"https://{token}@github.com/MasonLee3721/goodinfo-scraper.git"
+
+    def run(cmd):
+        subprocess.run(cmd, cwd=REPO_DIR, check=True)
+
+    run(["git", "remote", "set-url", "origin", remote])
+    run(["git", "add", filename])
+    run(["git", "commit", "-m", f"data: {os.path.basename(filename)}"])
+    run(["git", "push"])
+    print(f"已 push 到 GitHub：{filename}")
+
 if __name__ == "__main__":
     print("抓取中...")
     html = fetch()
     headers, data = parse(html)
-    save(headers, data)
+    filename = save(headers, data)
+    git_push(filename)
