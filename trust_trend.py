@@ -109,11 +109,18 @@ def main():
         return
 
     df = pd.DataFrame(results)
-    # 排序：連買天數多 > 趨勢遞增優先 > 今日買超幅度
-    df["_trend_sort"] = df["趨勢"].apply(lambda x: 0 if x == "📈" else (1 if x == "➡️" else 2))
-    df = df.sort_values(["連買天數", "_trend_sort", "今日買超%"], ascending=[False, True, False]).reset_index(drop=True)
+
+    # 方向三篩選：📈遞增 + 連買≥2天 + 買超≥0.2%
+    df = df[(df["趨勢"] == "📈") & (df["連買天數"] >= 2) & (df["今日買超%"] >= 0.2)].copy()
+
+    if df.empty:
+        print(f"[{latest}] 無符合條件的股票（📈遞增 + 連買≥2天 + 買超≥0.2%）")
+        return
+
+    df = df.sort_values(["連買天數", "今日買超%"], ascending=[False, False]).reset_index(drop=True)
 
     print(f"\n📅 {latest}  投信連買趨勢觀察")
+    print(f"篩選條件：📈遞增 + 連買≥2天 + 買超≥0.2%")
     print(f"{'─'*65}")
     print(f"{'排名':>4} {'代號':<6} {'名稱':<10} {'今日買超%':>8} {'連買':>4} {'趨勢':>4} {'平均%':>6}  近期走勢")
     print(f"{'─'*65}")
@@ -124,8 +131,7 @@ def main():
               f"{r['今日買超%']:>+8.2f} {r['連買天數']:>3}天 "
               f"{r['趨勢']:>4} {r['平均買超%']:>+6.2f}  {vals_str}")
 
-    print(f"\n共 {len(df)} 支連買中")
-    print(f"📈=遞增  📉=遞減  ➡️=持平")
+    print(f"\n共 {len(df)} 支符合條件（📈遞增 + 連買≥2天 + 買超≥0.2%）")
 
 if __name__ == "__main__":
     main()
