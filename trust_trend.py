@@ -133,5 +133,30 @@ def main():
 
     print(f"\n共 {len(df)} 支符合條件（📈遞增 + 連買≥2天 + 買超≥0.2%）")
 
+    # 畫 K 線圖並傳到 Discord
+    import subprocess
+    from pathlib import Path
+    from discord_send import send_image
+    channel_id = os.environ.get("DISCORD_CHANNEL_ID", "1499988458825977978")
+    uv = os.path.expanduser("~/.local/bin/uv")
+    chart_script = str(Path(__file__).parent / "chart_draw.py")
+
+    print(f"\n📊 產生 K 線圖中...")
+    for i, (_, r) in enumerate(df.iterrows()):
+        if i > 0:
+            import time; time.sleep(15)  # 避免 yfinance rate limit
+        code = str(r["代號"])
+        subprocess.run(
+            [uv, "run", "--with", "pandas", "--with", "requests", "--with",
+             "mplfinance", "--with", "matplotlib", "--with", "yfinance",
+             "python3", chart_script, code],
+            capture_output=True
+        )
+        chart_path = Path(__file__).parent / "charts" / f"{code}.png"
+        if chart_path.exists():
+            send_image(channel_id, str(chart_path), f"📊 【投信連買趨勢】{code} {r['名稱']}  連買{r['連買天數']}天 {r['近期數值'][-2]:+.2f}→{r['今日買超%']:+.2f}% 📈")
+        else:
+            print(f"  ⚠️  {code} 圖表產生失敗")
+
 if __name__ == "__main__":
     main()
