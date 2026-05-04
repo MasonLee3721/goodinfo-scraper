@@ -142,7 +142,7 @@ def main():
     chart_script = str(Path(__file__).parent / "chart_draw.py")
 
     print(f"\n📊 產生 K 線圖中...")
-    for i, (_, r) in enumerate(df.iterrows()):
+    for i, (_, r) in enumerate(df.head(5).iterrows()):
         if i > 0:
             import time; time.sleep(15)  # 避免 yfinance rate limit
         code = str(r["代號"])
