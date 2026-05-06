@@ -22,75 +22,24 @@ STOCK_ID = sys.argv[1] if len(sys.argv) > 1 else '6706'
 OUT_DIR = Path(__file__).parent / 'charts'
 OUT_DIR.mkdir(exist_ok=True)
 
-# ── 抓資料（證交所/櫃買 API，不依賴 yfinance）──────────────────────────────
+# ── 抓資料（yfinance：上市用 .TW，上櫃用 .TWO）────────────────────────────
 def get_kline(stock_id, months=5):
-    import requests, time
-    from datetime import date
-
-    def fetch_twse(code, ym):
-        url = f"https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?stockNo={code}&date={ym}01&response=json"
+    import yfinance as yf
+    # 先試上市，再試上櫃
+    for suffix in ['.TW', '.TWO']:
         try:
-            r = requests.get(url, timeout=10, verify=False)
-            d = r.json()
-            if d.get("stat") != "OK" or not d.get("data"):
-                return None
-            rows = []
-            for row in d["data"]:
-                try:
-                    rows.append({
-                        "Date": row[0], "Open": float(row[3].replace(",", "")),
-                        "High": float(row[4].replace(",", "")), "Low": float(row[5].replace(",", "")),
-                        "Close": float(row[6].replace(",", "")), "Volume": int(row[1].replace(",", "")) // 1000
-                    })
-                except: continue
-            return rows or None
-        except: return None
-
-    def fetch_otc(code, ym):
-        y = int(ym[:4]) - 1911
-        m = ym[4:6]
-        url = f"https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&d={y}/{m}&stkno={code}&s=0,asc"
-        try:
-            r = requests.get(url, timeout=10, verify=False)
-            d = r.json()
-            if not d.get("aaData"): return None
-            rows = []
-            for row in d["aaData"]:
-                try:
-                    rows.append({
-                        "Date": row[0], "Open": float(row[3].replace(",", "")),
-                        "High": float(row[4].replace(",", "")), "Low": float(row[5].replace(",", "")),
-                        "Close": float(row[6].replace(",", "")), "Volume": int(row[1].replace(",", "")) // 1000
-                    })
-                except: continue
-            return rows or None
-        except: return None
-
-    all_rows = []
-    today = date.today()
-    for i in range(months, -1, -1):
-        total = today.year * 12 + today.month - 1 - i
-        ym = f"{total // 12}{total % 12 + 1:02d}"
-        rows = fetch_twse(stock_id, ym) or fetch_otc(stock_id, ym)
-        if rows:
-            all_rows.extend(rows)
-        time.sleep(0.3)
-
-    if not all_rows:
-        return None
-
-    df = pd.DataFrame(all_rows).drop_duplicates("Date").sort_values("Date").reset_index(drop=True)
-    # 轉換民國日期（上市）或西元日期（上櫃）為標準格式
-    def parse_date(s):
-        s = str(s).strip()
-        parts = s.replace("/", " ").replace("-", " ").split()
-        if len(parts) == 3 and int(parts[0]) < 200:  # 民國年
-            return f"{int(parts[0])+1911}-{parts[1].zfill(2)}-{parts[2].zfill(2)}"
-        return s
-    df["Date"] = pd.to_datetime(df["Date"].apply(parse_date), errors="coerce")
-    df = df.dropna(subset=["Date"]).set_index("Date")
-    df.index.name = "Date"
-    return df[["Open", "High", "Low", "Close", "Volume"]]
+            df = yf.download(f'{stock_id}{suffix}', period=f'{months}mo',
+                             interval='1d', progress=False, auto_adjust=True)
+            if df is not None and len(df) >= 20:
+                df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                df['Volume'] = (df['Volume'] // 1000).astype(int)  # 股→張
+                df.index = pd.to_datetime(df.index.date)
+                df.index.name = 'Date'
+                return df
+        except:
+            continue
+    return None
 
 # ── 計算指標 ────────────────────────────────────────────────────────────────
 def calc_rsi(close, n=14):
