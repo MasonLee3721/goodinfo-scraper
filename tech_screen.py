@@ -12,7 +12,10 @@
 執行：uv run --with pandas --with requests python3 tech_screen.py
       uv run --with pandas --with requests python3 tech_screen.py --codes 6706 6147 6187
 """
-import requests, time, argparse
+import sys, io, requests, time, argparse
+if hasattr(sys.stdout, 'buffer') and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 from datetime import date, timedelta
 import pandas as pd
 

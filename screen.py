@@ -5,7 +5,10 @@
 
 執行：uv run --with pandas python3 screen.py
 """
-import os, glob
+import sys, io, os, glob
+if hasattr(sys.stdout, 'buffer') and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 import pandas as pd
 
 PCT_COL = "當日買賣超佔發行張數"

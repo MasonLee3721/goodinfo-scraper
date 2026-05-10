@@ -6,7 +6,10 @@
 執行：uv run --with pandas python3 analyze.py
       uv run --with pandas python3 analyze.py --days 5 --min-days 3
 """
-import os, glob, argparse
+import sys, io, os, glob, argparse
+if hasattr(sys.stdout, 'buffer') and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 import pandas as pd
 
 def load_all(folder="data"):

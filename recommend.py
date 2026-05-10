@@ -4,7 +4,10 @@
 入選：買超≥0.68% 且 前30名 且 技術面≥4/6
 執行：uv run --with pandas --with requests python3 recommend.py
 """
-import os, glob, csv, time, warnings
+import sys, io, os, glob, csv, time, warnings
+if hasattr(sys.stdout, 'buffer') and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 import pandas as pd
 import requests
 from datetime import date
@@ -66,34 +69,32 @@ def fetch_twse(code, ym):
         return rows or None
     except: return None
 
-def fetch_otc(code, ym):
-    y = int(ym[:4]) - 1911
-    m = ym[4:6]
-    url = f"https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&d={y}/{m}&stkno={code}&s=0,asc"
-    try:
-        r = requests.get(url, timeout=10, verify=False)
-        d = r.json()
-        if not d.get("aaData"): return None
-        rows = []
-        for row in d["aaData"]:
-            try:
-                rows.append({"date": row[0], "close": float(row[6].replace(",", "")),
-                             "volume": int(row[1].replace(",", ""))})
-            except: continue
-        return rows or None
-    except: return None
+def fetch_yahoo(code):
+    for suffix in [".TW", ".TWO"]:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{code}{suffix}?interval=1d&range=6mo"
+        try:
+            r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            d = r.json()
+            result = d.get("chart", {}).get("result")
+            if not result: continue
+            timestamps = result[0]["timestamp"]
+            quotes = result[0]["indicators"]["quote"][0]
+            closes = quotes["close"]
+            volumes = quotes["volume"]
+            rows = []
+            for ts, c, v in zip(timestamps, closes, volumes):
+                if c is None or v is None: continue
+                from datetime import datetime
+                rows.append({"date": datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d"),
+                             "close": float(c), "volume": int(v)})
+            if rows: return rows
+        except: continue
+    return None
 
 def get_kline(code):
-    all_rows = []
-    today = date.today()
-    for i in range(4, -1, -1):
-        total = today.year * 12 + today.month - 1 - i
-        ym = f"{total // 12}{total % 12 + 1:02d}"
-        rows = fetch_twse(code, ym) or fetch_otc(code, ym)
-        if rows: all_rows.extend(rows)
-        time.sleep(0.3)
-    if not all_rows: return None
-    df = pd.DataFrame(all_rows).drop_duplicates("date").sort_values("date").reset_index(drop=True)
+    rows = fetch_yahoo(code)
+    if not rows: return None
+    df = pd.DataFrame(rows).drop_duplicates("date").sort_values("date").reset_index(drop=True)
     return df
 
 def calc_rsi(series, period=14):

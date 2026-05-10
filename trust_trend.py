@@ -3,7 +3,10 @@
 功能：找出連買中的股票，並判斷買超幅度趨勢（遞增/遞減/持平）
 執行：uv run --with pandas python3 trust_trend.py
 """
-import os, glob
+import sys, io, os, glob
+if hasattr(sys.stdout, 'buffer') and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 import pandas as pd
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -138,7 +141,7 @@ def main():
     from pathlib import Path
     from discord_send import send_image
     channel_id = os.environ.get("DISCORD_CHANNEL_ID", "1499988458825977978")
-    uv = os.path.expanduser("~/.local/bin/uv")
+    import sys
     chart_script = str(Path(__file__).parent / "chart_draw.py")
 
     print(f"\n📊 產生 K 線圖中...")
@@ -147,9 +150,7 @@ def main():
             import time; time.sleep(15)  # 避免 yfinance rate limit
         code = str(r["代號"])
         subprocess.run(
-            [uv, "run", "--with", "pandas", "--with", "requests", "--with",
-             "mplfinance", "--with", "matplotlib", "--with", "yfinance",
-             "python3", chart_script, code],
+            [sys.executable, chart_script, code],
             capture_output=True
         )
         chart_path = Path(__file__).parent / "charts" / f"{code}.png"
