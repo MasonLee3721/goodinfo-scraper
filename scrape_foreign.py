@@ -24,13 +24,17 @@ HEADERS = {
 
 def fetch():
     session = requests.Session()
-    session.get("https://goodinfo.tw/tw/index.asp", headers=HEADERS, timeout=15)
     session.cookies.set("CLIENT_KEY", "2.5|41094.0082828283|46649.5638383838|8|46144.5|46144.5|",
                         domain="goodinfo.tw", path="/")
-    time.sleep(1)
-    r = session.get(API, headers=HEADERS, timeout=30)
-    r.encoding = "utf-8"
-    return r.text
+    for attempt in range(3):
+        try:
+            r = session.get(API, headers=HEADERS, timeout=45)
+            r.encoding = "utf-8"
+            return r.text
+        except Exception as e:
+            print(f"第 {attempt+1} 次失敗：{e}，重試中...")
+            time.sleep(5)
+    raise RuntimeError("連線 goodinfo.tw 失敗，已重試 3 次")
 
 def parse(html):
     soup = BeautifulSoup(html, "lxml")
