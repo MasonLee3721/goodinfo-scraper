@@ -199,13 +199,7 @@ def main():
                 print(f"  ❌ 不符合：{' / '.join(failed)}")
         print()
 
-    total = len(df)
     print(f"{'='*55}")
-    if total == 1:
-        print(f"⚠️  今日投本比篩選（≥0.68% 且排名前30）僅通過 1 支，無第2～5名次選。")
-        print(f"   投信火力今日高度集中，第1推薦為唯一標的。")
-    elif total < 5:
-        print(f"⚠️  今日投本比篩選共通過 {total} 支，無法湊滿第2～5名次選。")
     print(f"說明：第1推薦為最佳，第2~5為次選（條件未全符合，供參考）")
 
     # 自動幫推薦股票畫 K 線圖並傳到 Discord
@@ -220,7 +214,7 @@ def main():
         name = r['名稱']
         result = subprocess.run(
             [sys.executable, str(chart_script), code],
-            capture_output=True, text=True
+            capture_output=True, text=True, encoding='utf-8', errors='replace'
         )
         chart_path = Path(__file__).parent / "charts" / f"{code}.png"
         if chart_path.exists():
