@@ -206,7 +206,7 @@ def main():
     print(f"\n📊 產生 K 線圖中...")
     import subprocess, sys
     from discord_send import send_image
-    chart_script = Path(__file__).parent / "chart_draw.py"
+    chart_script = os.environ.get("CHART_SCRIPT") or str(Path(__file__).parent / "chart_draw.py")
     channel_id = os.environ.get("DISCORD_CHANNEL_ID", "1499988458825977978")
 
     for rank, (_, r) in enumerate(df.head(5).iterrows(), 1):

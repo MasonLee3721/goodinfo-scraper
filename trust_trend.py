@@ -142,7 +142,7 @@ def main():
     from discord_send import send_image
     channel_id = os.environ.get("DISCORD_CHANNEL_ID", "1499988458825977978")
     import sys
-    chart_script = str(Path(__file__).parent / "chart_draw.py")
+    chart_script = os.environ.get("CHART_SCRIPT") or str(Path(__file__).parent / "chart_draw.py")
 
     print(f"\n📊 產生 K 線圖中...")
     for i, (_, r) in enumerate(df.head(5).iterrows()):
