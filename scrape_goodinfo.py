@@ -4,6 +4,7 @@
 """
 import requests, time, csv, os, subprocess, json
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 from bs4 import BeautifulSoup
 
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -49,7 +50,21 @@ def parse_int(val):
     except ValueError:
         return None
 
-def fetch_twse_tpex():
+def calculate_pct(trust_shares, issued_shares):
+    """使用 Decimal 進行高精度財務比例計算，避免 float 浮點數誤差"""
+    if not trust_shares or not issued_shares or issued_shares <= 0:
+        return Decimal("0.00")
+    return (Decimal(trust_shares) / Decimal(issued_shares) * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+def verify_dates(twse_date, tpex_date_ad, target_date=None):
+    """驗證 TWSE 與 TPEX 日期是否一致，且是否符合指定的目標交易日 (target_date)"""
+    if twse_date != tpex_date_ad:
+        raise ValueError(f"TWSE 日期 ({twse_date}) 與 TPEX 日期 ({tpex_date_ad}) 不一致，資料尚未同步完成")
+    if target_date and twse_date != target_date:
+        raise ValueError(f"TWSE 與 TPEX 日期 ({twse_date}) 同為舊日期，不符合目標交易日 ({target_date})")
+    return True
+
+def fetch_twse_tpex(target_date=None):
     """當 Goodinfo 被 Cloudflare 防火牆擋住時，自動改用證交所 (TWSE) 與櫃買中心 (TPEX) 官方 Open API"""
     print("Goodinfo 被擋，改用 TWSE/TPEX 官方 API 抓取投信買超佔股本資料...")
 
@@ -98,12 +113,12 @@ def fetch_twse_tpex():
     # 3. 抓取 TPEX 三大法人買賣超 (上櫃)
     r_tpex = fetch_json("https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading")
     if isinstance(r_tpex, list) and r_tpex:
-        # 驗證 TWSE 與 TPEX 資料日期一致性
+        # 驗證 TWSE 與 TPEX 資料日期一致性，且是否符合 target_date
         tpex_date_roc = r_tpex[0].get("Date", "").strip()
         if len(tpex_date_roc) == 7 and tpex_date_roc.isdigit():
             tpex_date_ad = f"{int(tpex_date_roc[:3]) + 1911}{tpex_date_roc[3:]}"
-            if twse_date and twse_date != tpex_date_ad:
-                raise ValueError(f"TWSE 日期 ({twse_date}) 與 TPEX 日期 ({tpex_date_ad}) 不一致，資料尚未同步完成")
+            if twse_date:
+                verify_dates(twse_date, tpex_date_ad, target_date)
 
         for item in r_tpex:
             code = item.get("SecuritiesCompanyCode", "").strip()
@@ -118,13 +133,10 @@ def fetch_twse_tpex():
             except Exception:
                 continue
 
-    # 核心計算：全程以精確股數 (shares) 進行浮點數運算，絕不提前截斷為張
+    # 核心財務比例計算：採用 Decimal 進行高精度計算
     for s in all_stocks:
         issued_shares = shares_map.get(s["code"], 0)
-        if issued_shares > 0:
-            s["pct"] = round((s["trust_shares"] / issued_shares * 100), 2)
-        else:
-            s["pct"] = 0.0
+        s["pct"] = calculate_pct(s["trust_shares"], issued_shares)
 
     # 排序取前 300 名
     ranked = sorted(all_stocks, key=lambda x: (x["pct"], x["trust_shares"]), reverse=True)[:300]
