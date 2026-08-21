@@ -62,6 +62,19 @@ def calculate_pct(trust_shares, issued_shares):
         raise ValueError("issued_shares must be positive")
     return Decimal(trust_shares) / Decimal(issued_shares) * Decimal("100")
 
+def format_pct_for_csv(raw_pct):
+    """將 Decimal 投本比格式化為 CSV 顯示用字串。缺值回傳空字串 ''，Decimal('0') 回傳 '0.00'，正值加 '+'"""
+    if raw_pct is None:
+        return ""
+    formatted = raw_pct.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if formatted > 0:
+        return f"+{formatted}"
+    return f"{formatted:.2f}"
+
+def filter_by_pct_threshold(stocks, threshold=Decimal("0.4")):
+    """以核心原始 Decimal('pct') 進行門檻篩選，避免誤用顯示層四捨五入值"""
+    return [s for s in stocks if s.get("pct") is not None and s["pct"] >= threshold]
+
 def verify_dates(twse_date, tpex_date_ad, target_date=None):
     """驗證 TWSE 與 TPEX 日期是否一致，且是否符合指定的目標交易日 (target_date)"""
     if twse_date != tpex_date_ad:
@@ -161,12 +174,8 @@ def fetch_twse_tpex(target_date=None):
 
     csv_data = []
     for rank, s in enumerate(ranked, 1):
-        # 顯示層格式化：只有 pct is not None 才能呼叫 quantize()；缺值輸出空字串 ""
-        if s["pct"] is not None:
-            pct_formatted = s["pct"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            pct_str = f"+{pct_formatted}" if pct_formatted > 0 else str(pct_formatted)
-        else:
-            pct_str = ""
+        # 呼叫正式 format_pct_for_csv 函式進行顯示層格式化
+        pct_str = format_pct_for_csv(s["pct"])
 
         # 缺值顯式填入空字串 "" (Representing null), 絕不填 "0"
         row = [
