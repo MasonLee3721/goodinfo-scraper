@@ -55,10 +55,12 @@ def parse_int(val):
         return None
 
 def calculate_pct(trust_shares, issued_shares):
-    """使用 Decimal 進行高精度財務比例計算，避免 float 浮點數誤差"""
-    if not trust_shares or not issued_shares or issued_shares <= 0:
-        return Decimal("0.00")
-    return (Decimal(trust_shares) / Decimal(issued_shares) * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    """使用 Decimal 進行高精度財務比例計算。缺值回傳 None，無效分母拋出 ValueError，保留完整 Decimal 精度不提前截斷"""
+    if trust_shares is None or issued_shares is None:
+        return None
+    if issued_shares <= 0:
+        raise ValueError("issued_shares must be positive")
+    return Decimal(trust_shares) / Decimal(issued_shares) * Decimal("100")
 
 def verify_dates(twse_date, tpex_date_ad, target_date=None):
     """驗證 TWSE 與 TPEX 日期是否一致，且是否符合指定的目標交易日 (target_date)"""
@@ -137,13 +139,39 @@ def fetch_twse_tpex(target_date=None):
             except Exception:
                 continue
 
-    # 核心財務比例計算：採用 Decimal 進行高精度計算
+    # 核心財務比例計算：採用完整 Decimal 精度（不安裝提前 quantize）
     for s in all_stocks:
-        issued_shares = shares_map.get(s["code"], 0)
-        s["pct"] = calculate_pct(s["trust_shares"], issued_shares)
+        issued_shares = shares_map.get(s["code"], None)
+        try:
+            s["pct"] = calculate_pct(s["trust_shares"], issued_shares)
+        except ValueError:
+            s["pct"] = None
 
-    # 排序取前 300 名
-    ranked = sorted(all_stocks, key=lambda x: (x["pct"], x["trust_shares"]), reverse=True)[:300]
+    # 排序取前 300 名（過濾有效且 > 0 的 pct）
+    valid_stocks = [s for s in all_stocks if s["pct"] is not None and s["pct"] > Decimal("0")]
+    ranked = sorted(valid_stocks, key=lambda x: (x["pct"], x["trust_shares"]), reverse=True)[:300]
+
+    csv_headers = [
+        "排名", "代號", "名稱", "成交", "漲跌價", "漲跌幅", "法人買賣日期",
+        "當日買賣超佔發行張數", "2日買賣超佔發行張數", "3日買賣超佔發行張數",
+        "5日買賣超佔發行張數", "10日買賣超佔發行張數", "1個月買賣超佔發行張數",
+        "3個月買賣超佔發行張數", "半年買賣超佔發行張數", "1年買賣超佔發行張數",
+        "3年買賣超佔發行張數", "10年買賣超佔發行張數", "今年買賣超佔發行張數"
+    ]
+
+    csv_data = []
+    for rank, s in enumerate(ranked, 1):
+        # 只在顯示層（CSV 輸出）才格式化為小數點後 2 位
+        pct_formatted = s["pct"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        pct_str = f"+{pct_formatted}" if pct_formatted > 0 else str(pct_formatted)
+        # 缺值顯式填入空字串 "" (Representing null), 絕不填 "0"
+        row = [
+            str(rank), s["code"], s["name"], s["close"], "", "", mm_dd,
+            pct_str, "", "", "", "", "", "", "", "", "", "", ""
+        ]
+        csv_data.append(row)
+
+    return csv_headers, csv_data
 
     csv_headers = [
         "排名", "代號", "名稱", "成交", "漲跌價", "漲跌幅", "法人買賣日期",
