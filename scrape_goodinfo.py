@@ -90,8 +90,8 @@ def filter_by_pct_threshold(stocks, threshold=Decimal("0.4")):
     return valid_filtered
 
 def rank_stocks(stocks, top_n=300):
-    """過濾有效且 > 0 的 Decimal('pct')，按 (pct 降序, trust_shares 降序, code 升序) 穩定排序並取前 top_n 名。嚴格驗證型態與 top_n 邊界"""
-    if not isinstance(top_n, int) or top_n <= 0:
+    """過濾有效且 > 0 的 Decimal('pct')，按 (-pct, -trust_shares, code) 確定性穩定排序取前 top_n 名。嚴格驗證型態與 top_n 邊界"""
+    if not isinstance(top_n, int) or isinstance(top_n, bool) or top_n <= 0:
         return []
 
     valid_stocks = []
@@ -102,22 +102,22 @@ def rank_stocks(stocks, top_n=300):
         if not isinstance(pct, Decimal):
             raise TypeError(f"stock pct must be Decimal or None, got {type(pct)}")
 
-        trust_shares = s.get("trust_shares", 0)
-        if trust_shares is not None and not isinstance(trust_shares, int):
-            raise TypeError(f"stock trust_shares must be int or None, got {type(trust_shares)}")
+        if "trust_shares" not in s or s["trust_shares"] is None:
+            raise TypeError("stock trust_shares is missing or None")
+
+        trust_shares = s["trust_shares"]
+        if not isinstance(trust_shares, int) or isinstance(trust_shares, bool):
+            raise TypeError(f"stock trust_shares must be int, got {type(trust_shares)}")
 
         if pct > Decimal("0"):
             valid_stocks.append(s)
 
-    # 三級確定性穩定排序：1. pct (降序), 2. trust_shares (降序), 3. code (升序)
+    # 確定性穩定排序鍵：1. -pct (降序), 2. -trust_shares (降序), 3. code (升序)
     def sort_key(s):
-        code_str = str(s.get("code", ""))
-        code_val = int(code_str) if code_str.isdigit() else code_str
-        # 在 reverse=True 下，code 需做反向 (如果是 int 取負數) 以實現升序
-        code_rank_key = -code_val if isinstance(code_val, int) else code_val
-        return (s["pct"], s.get("trust_shares", 0) or 0, code_rank_key)
+        code_str = str(s.get("code", "")).strip()
+        return (-s["pct"], -s["trust_shares"], code_str)
 
-    return sorted(valid_stocks, key=sort_key, reverse=True)[:top_n]
+    return sorted(valid_stocks, key=sort_key)[:top_n]
 
 def verify_dates(twse_date, tpex_date_ad, target_date=None):
     """驗證 TWSE 與 TPEX 日期是否一致，且是否符合指定的目標交易日 (target_date)"""

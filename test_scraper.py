@@ -1,5 +1,5 @@
 """
-單元測試與端到端測試：驗證爬蟲處理函式與完整數據鏈路 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾強型別檢查、高精度與三級穩定排序、top_n/trust_shares 邊界與型別檢查、端到端 CSV 產出、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
+單元測試與端到端測試：驗證爬蟲處理函式與完整數據鏈路 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾強型別檢查、高精度與三級穩定排序 (-pct, -trust_shares, code)、top_n/bool/trust_shares 邊界與型別檢查、端到端 CSV 產出、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
 執行方式：.venv/bin/python test_scraper.py
 """
 import unittest
@@ -68,9 +68,9 @@ class TestScraperFunctions(unittest.TestCase):
             filter_by_pct_threshold(invalid_stocks, threshold=Decimal("0.4"))
 
     def test_rank_stocks_secondary_and_tertiary_sorting(self):
-        """直接呼叫正式高精度排序函式 rank_stocks 驗證三級確定性穩定排序：
-        1. pct (降序)
-        2. trust_shares (降序)
+        """直接呼叫正式高精度排序函式 rank_stocks 驗證 (-pct, -trust_shares, code) 三級確定性穩定排序：
+        1. -pct (降序)
+        2. -trust_shares (降序)
         3. code (升序，如 2317 優先於 2330)
         """
         stocks = [
@@ -97,17 +97,34 @@ class TestScraperFunctions(unittest.TestCase):
 
     def test_rank_stocks_top_n_and_type_boundaries(self):
         """直接呼叫正式高精度排序函式 rank_stocks 驗證邊界與型別處置：
-        - top_n 0, 負數, 浮點數傳入時回傳空陣列 []
-        - trust_shares 非 int/None 時拋出 TypeError
+        - top_n 為 0, 負數, 浮點數或 bool (True/False) 時回傳空陣列 []
+        - trust_shares 缺失或為 None 時拋出 TypeError (防範冒充 0)
+        - trust_shares 非 int/bool 時拋出 TypeError
         """
         stocks = [{"code": "2330", "pct": Decimal("0.5"), "trust_shares": 500}]
         self.assertEqual(rank_stocks(stocks, top_n=0), [])
         self.assertEqual(rank_stocks(stocks, top_n=-5), [])
         self.assertEqual(rank_stocks(stocks, top_n=3.5), [])
+        self.assertEqual(rank_stocks(stocks, top_n=True), [])
+        self.assertEqual(rank_stocks(stocks, top_n=False), [])
 
-        invalid_trust_stocks = [{"code": "2330", "pct": Decimal("0.5"), "trust_shares": "500"}]
+        # trust_shares 缺失或為 None
+        missing_trust_stocks = [{"code": "2330", "pct": Decimal("0.5")}]
         with self.assertRaises(TypeError):
-            rank_stocks(invalid_trust_stocks, top_n=10)
+            rank_stocks(missing_trust_stocks, top_n=10)
+
+        none_trust_stocks = [{"code": "2330", "pct": Decimal("0.5"), "trust_shares": None}]
+        with self.assertRaises(TypeError):
+            rank_stocks(none_trust_stocks, top_n=10)
+
+        # trust_shares 為 str 或 bool
+        str_trust_stocks = [{"code": "2330", "pct": Decimal("0.5"), "trust_shares": "500"}]
+        with self.assertRaises(TypeError):
+            rank_stocks(str_trust_stocks, top_n=10)
+
+        bool_trust_stocks = [{"code": "2330", "pct": Decimal("0.5"), "trust_shares": True}]
+        with self.assertRaises(TypeError):
+            rank_stocks(bool_trust_stocks, top_n=10)
 
     def test_end_to_end_pipeline_from_fixture(self):
         """端到端測試 (End-to-End Pipeline Test)：
