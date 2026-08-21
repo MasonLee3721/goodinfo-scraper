@@ -1,9 +1,9 @@
 """
-單元測試：驗證爬蟲處理函式之正確性 (數值解析、Decimal 財務比率精度、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
+單元測試：驗證爬蟲處理函式之正確性 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾、排名排序、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
 執行方式：.venv/bin/python test_scraper.py
 """
 import unittest
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from scrape_goodinfo import parse_int, calculate_pct, verify_dates
 
 class TestScraperFunctions(unittest.TestCase):
@@ -28,6 +28,44 @@ class TestScraperFunctions(unittest.TestCase):
         self.assertIsNone(parse_int("null"))
         self.assertIsNone(parse_int("None"))
 
+    def test_calculate_pct_core_raw_value(self):
+        """核心測試：(500 / 10,000,000) * 100 核心正確原始值必須為 Decimal('0.005')，不安裝提前四捨五入截斷"""
+        trust_shares = 500
+        issued_shares = 10_000_000
+        raw_pct = calculate_pct(trust_shares, issued_shares)
+        self.assertIsInstance(raw_pct, Decimal)
+        self.assertEqual(raw_pct, Decimal("0.005"))
+
+    def test_calculate_pct_display_layer(self):
+        """顯示層測試：核心原始值 Decimal('0.005') 僅在顯示層使用 ROUND_HALF_UP 格式化後顯示為 Decimal('0.01')"""
+        trust_shares = 500
+        issued_shares = 10_000_000
+        raw_pct = calculate_pct(trust_shares, issued_shares)
+        display_pct = raw_pct.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        self.assertEqual(display_pct, Decimal("0.01"))
+
+    def test_calculate_pct_threshold_gate(self):
+        """門檻測試：0.395% 不得因顯示成 0.40% 就通過 >= 0.4% 的門檻比對」"""
+        trust_shares = 395
+        issued_shares = 100_000
+        raw_pct = calculate_pct(trust_shares, issued_shares) # Decimal("0.395")
+        
+        # 顯示層會是 0.40%
+        display_pct = raw_pct.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        self.assertEqual(display_pct, Decimal("0.40"))
+
+        # 門檻比對必須使用 raw_pct，Decimal("0.395") >= Decimal("0.4") 必須判定為 False
+        threshold = Decimal("0.4")
+        self.assertFalse(raw_pct >= threshold)
+
+    def test_calculate_pct_ranking_order(self):
+        """排名測試：0.004% 與 0.005% 必須保持不同原始排序 (0.004 < 0.005)"""
+        pct_A = calculate_pct(400, 10_000_000) # Decimal("0.004")
+        pct_B = calculate_pct(500, 10_000_000) # Decimal("0.005")
+
+        self.assertNotEqual(pct_A, pct_B)
+        self.assertLess(pct_A, pct_B)
+
     def test_calculate_pct_missing(self):
         """直接呼叫正式 calculate_pct：缺值測試 (分子或分母為 None) 必須傳回 None"""
         self.assertIsNone(calculate_pct(None, 10_000_000))
@@ -49,16 +87,6 @@ class TestScraperFunctions(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx2:
             calculate_pct(500, -1000)
         self.assertIn("positive", str(ctx2.exception))
-
-    def test_calculate_pct_no_premature_truncation(self):
-        """直接呼叫正式 calculate_pct：驗證核心不提前做 quantize(0.01)，保留完整 Decimal 精度供前30名排序」"""
-        trust_shares = 1234
-        issued_shares = 100_000_000
-        # 1234 / 100000000 * 100 = 0.001234
-        pct = calculate_pct(trust_shares, issued_shares)
-        self.assertIsInstance(pct, Decimal)
-        self.assertEqual(pct, Decimal("1234") / Decimal("100000000") * Decimal("100"))
-        self.assertEqual(pct, Decimal("0.001234"))
 
     def test_verify_dates_success(self):
         """直接呼叫正式函式 verify_dates：當 TWSE, TPEX 與目標交易日均相同，驗證通過"""
