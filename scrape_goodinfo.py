@@ -114,7 +114,7 @@ def rank_stocks(stocks, top_n=300):
         if "code" not in s or s["code"] is None or not isinstance(s["code"], str) or not s["code"].strip():
             raise TypeError("stock code must be non-empty str")
 
-        if pct > Decimal("0"):
+        if pct > Decimal("0") and trust_shares > 0:
             valid_stocks.append(s)
 
     return sorted(valid_stocks, key=lambda s: (-s["pct"], -s["trust_shares"], s["code"]))[:top_n]
