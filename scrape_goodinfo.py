@@ -63,21 +63,43 @@ def calculate_pct(trust_shares, issued_shares):
     return Decimal(trust_shares) / Decimal(issued_shares) * Decimal("100")
 
 def format_pct_for_csv(raw_pct):
-    """將 Decimal 投本比格式化為 CSV 顯示用字串。缺值回傳空字串 ''，Decimal('0') 回傳 '0.00'，正值加 '+'"""
+    """將 Decimal 投本比格式化為 CSV 顯示用字串。缺值回傳空字串 ''，Decimal('0') 回傳 '0.00'，正值加上 '+0.00' 格式"""
     if raw_pct is None:
         return ""
+    if not isinstance(raw_pct, Decimal):
+        raise TypeError(f"raw_pct must be Decimal or None, got {type(raw_pct)}")
     formatted = raw_pct.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if formatted > 0:
-        return f"+{formatted}"
+        return f"+{formatted:.2f}"
     return f"{formatted:.2f}"
 
 def filter_by_pct_threshold(stocks, threshold=Decimal("0.4")):
-    """以核心原始 Decimal('pct') 進行門檻篩選，避免誤用顯示層四捨五入值"""
-    return [s for s in stocks if s.get("pct") is not None and s["pct"] >= threshold]
+    """以核心原始 Decimal('pct') 進行門檻篩選，避免誤用顯示層四捨五入值。強制比對門檻為 Decimal"""
+    if not isinstance(threshold, Decimal):
+        threshold = Decimal(str(threshold))
+
+    valid_filtered = []
+    for s in stocks:
+        pct = s.get("pct")
+        if pct is None:
+            continue
+        if not isinstance(pct, Decimal):
+            raise TypeError(f"stock pct must be Decimal or None, got {type(pct)}")
+        if pct >= threshold:
+            valid_filtered.append(s)
+    return valid_filtered
 
 def rank_stocks(stocks, top_n=300):
-    """過濾有效且 > 0 的 Decimal('pct')，按 (pct, trust_shares) 降序排序並取前 top_n 名"""
-    valid_stocks = [s for s in stocks if s.get("pct") is not None and s["pct"] > Decimal("0")]
+    """過濾有效且 > 0 的 Decimal('pct')，按 (pct, trust_shares) 降序排序並取前 top_n 名。嚴格驗證 pct 型態"""
+    valid_stocks = []
+    for s in stocks:
+        pct = s.get("pct")
+        if pct is None:
+            continue
+        if not isinstance(pct, Decimal):
+            raise TypeError(f"stock pct must be Decimal or None, got {type(pct)}")
+        if pct > Decimal("0"):
+            valid_stocks.append(s)
     return sorted(valid_stocks, key=lambda x: (x["pct"], x.get("trust_shares", 0)), reverse=True)[:top_n]
 
 def verify_dates(twse_date, tpex_date_ad, target_date=None):

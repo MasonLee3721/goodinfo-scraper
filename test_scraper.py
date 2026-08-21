@@ -1,5 +1,5 @@
 """
-單元測試：驗證爬蟲處理函式之正確性 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾正式函式、高精度排序與 None 防護正式函式、CSV 缺值/真零/正值格式化輸出安全、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
+單元測試：驗證爬蟲處理函式之正確性 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾強型別檢查、高精度排序型別檢查、CSV 格式化統一、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
 執行方式：.venv/bin/python test_scraper.py
 """
 import unittest
@@ -41,26 +41,38 @@ class TestScraperFunctions(unittest.TestCase):
         - Decimal('0.005') -> '+0.01'
         - Decimal('0') -> '0.00'
         - None -> '' (空字串，不變成 0 或 0.00)
+        - 非 Decimal 型別 -> 拋出 TypeError
         """
         self.assertEqual(format_pct_for_csv(Decimal("0.005")), "+0.01")
         self.assertEqual(format_pct_for_csv(Decimal("0")), "0.00")
         self.assertEqual(format_pct_for_csv(None), "")
+        with self.assertRaises(TypeError):
+            format_pct_for_csv(0.005) # 不接受裸 float
 
-    def test_filter_by_pct_threshold_formal_function(self):
+    def test_filter_by_pct_threshold_strict_types(self):
         """直接呼叫正式門檻篩選函式 filter_by_pct_threshold 驗證：
-        原始值 Decimal('0.395') 即使顯示層顯示為 '+0.40'，門檻比對 >= Decimal('0.4') 時仍不得通過！
+        - 原始值 Decimal('0.395') 即使顯示層顯示為 '+0.40'，門檻比對 >= Decimal('0.4') 時仍不得通過
+        - 自動將 float/str threshold 轉為 Decimal 比對
+        - 遇到非 Decimal/None 的 pct 拋出 TypeError
         """
         stocks = [
             {"code": "2330", "pct": Decimal("0.395")},
             {"code": "2317", "pct": Decimal("0.400")}
         ]
-        filtered = filter_by_pct_threshold(stocks, threshold=Decimal("0.4"))
+        # 使用 float 傳入 threshold 驗證安全轉換
+        filtered = filter_by_pct_threshold(stocks, threshold=0.4)
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["code"], "2317")
 
-    def test_rank_stocks_formal_function(self):
+        # 傳入非法型態 pct
+        invalid_stocks = [{"code": "9999", "pct": "0.5"}]
+        with self.assertRaises(TypeError):
+            filter_by_pct_threshold(invalid_stocks, threshold=Decimal("0.4"))
+
+    def test_rank_stocks_strict_types(self):
         """直接呼叫正式高精度排序函式 rank_stocks 驗證：
-        0.004% 與 0.005% 在高精度 Decimal 排序下，0.005% 的股票必須精確排在 0.004% 前面
+        - 0.004% 與 0.005% 在高精度 Decimal 排序下，0.005% 的股票必須精確排在 0.004% 前面
+        - 遇到非 Decimal/None 的 pct 拋出 TypeError
         """
         stocks = [
             {"code": "2330", "pct": Decimal("0.004"), "trust_shares": 400},
@@ -71,9 +83,13 @@ class TestScraperFunctions(unittest.TestCase):
         self.assertEqual(ranked[0]["code"], "2317")
         self.assertEqual(ranked[1]["code"], "2330")
 
+        invalid_stocks = [{"code": "9999", "pct": 0.005}]
+        with self.assertRaises(TypeError):
+            rank_stocks(invalid_stocks, top_n=2)
+
     def test_rank_stocks_none_safety(self):
         """直接呼叫正式高精度排序函式 rank_stocks 驗證：
-        當候選股票清單包含 pct=None 缺值個股時，不會引發 None 與 Decimal 比較的 TypeError 崩潰，且缺值股票被安全排除不編列排名
+        當候選股票清單包含 pct=None 缺值個股時，不會引發 TypeError 崩潰，且缺值股票被安全排除不編列排名
         """
         stocks = [
             {"code": "2330", "pct": None, "trust_shares": 400},
