@@ -37,25 +37,37 @@ def fetch_json(url):
             time.sleep(1)
     return []
 
+def parse_int(val):
+    """將字串解析為整數。若為空值、None、-- 或非數字，明確回傳 None（表示 missing null），絕不回傳 0"""
+    if val is None:
+        return None
+    val_str = str(val).replace(",", "").strip()
+    if not val_str or val_str in ("--", "null", "None"):
+        return None
+    try:
+        return int(val_str)
+    except ValueError:
+        return None
+
 def fetch_twse_tpex():
     """當 Goodinfo 被 Cloudflare 防火牆擋住時，自動改用證交所 (TWSE) 與櫃買中心 (TPEX) 官方 Open API"""
     print("Goodinfo 被擋，改用 TWSE/TPEX 官方 API 抓取投信買超佔股本資料...")
 
-    # 1. 抓取上市與上櫃股票的發行張數
+    # 1. 抓取上市與上櫃股票的全程發行股數 (單位：股，保留精確股數不提前做 // 1000 截斷)
     shares_map = {}
     twse_shares = fetch_json("https://openapi.twse.com.tw/v1/opendata/t187ap03_L")
     for row in twse_shares:
         code = row.get("公司代號", "").strip()
-        cnt = row.get("已發行普通股數或TDR原股發行股數", "0").strip()
-        if code and cnt.isdigit():
-            shares_map[code] = int(cnt) // 1000
+        cnt = parse_int(row.get("已發行普通股數或TDR原股發行股數"))
+        if code and cnt is not None and cnt > 0:
+            shares_map[code] = cnt
 
     tpex_shares = fetch_json("https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O")
     for row in tpex_shares:
         code = row.get("SecuritiesCompanyCode", "").strip()
-        cnt = row.get("IssueShares", "0").strip()
-        if code and cnt.isdigit():
-            shares_map[code] = int(cnt) // 1000
+        cnt = parse_int(row.get("IssueShares"))
+        if code and cnt is not None and cnt > 0:
+            shares_map[code] = cnt
 
     # 2. 抓取 TWSE 三大法人買賣超 (上市)
     r_twse = fetch_json("https://www.twse.com.tw/rwd/zh/fund/T86?response=json&selectType=ALL")
@@ -73,9 +85,13 @@ def fetch_twse_tpex():
         try:
             close_val = row[2].replace(",", "").strip() if len(row) > 2 else ""
             close = close_val if close_val not in ("--", "0", "") else ""
-            trust = int(row[10].replace(",", "")) // 1000
-            if trust > 0:
-                all_stocks.append({"code": code, "name": name, "close": close, "trust": trust})
+            # 保留精確買賣超股數 (shares)
+            trust_shares = parse_int(row[10])
+            if trust_shares is not None and trust_shares > 0:
+                all_stocks.append({
+                    "code": code, "name": name, "close": close,
+                    "trust_shares": trust_shares
+                })
         except Exception:
             continue
 
@@ -93,19 +109,25 @@ def fetch_twse_tpex():
             code = item.get("SecuritiesCompanyCode", "").strip()
             name = item.get("CompanyName", "").strip()
             try:
-                trust = int(item.get("SecuritiesInvestmentTrustCompanies-Difference", "0").replace(",", "")) // 1000
-                if trust > 0:
-                    all_stocks.append({"code": code, "name": name, "close": "", "trust": trust})
+                trust_shares = parse_int(item.get("SecuritiesInvestmentTrustCompanies-Difference"))
+                if trust_shares is not None and trust_shares > 0:
+                    all_stocks.append({
+                        "code": code, "name": name, "close": "",
+                        "trust_shares": trust_shares
+                    })
             except Exception:
                 continue
 
-    # 計算當日買賣超佔發行張數 (%)
+    # 核心計算：全程以精確股數 (shares) 進行浮點數運算，絕不提前截斷為張
     for s in all_stocks:
-        issued = shares_map.get(s["code"], 0)
-        s["pct"] = round((s["trust"] / issued * 100), 2) if issued > 0 else 0.0
+        issued_shares = shares_map.get(s["code"], 0)
+        if issued_shares > 0:
+            s["pct"] = round((s["trust_shares"] / issued_shares * 100), 2)
+        else:
+            s["pct"] = 0.0
 
     # 排序取前 300 名
-    ranked = sorted(all_stocks, key=lambda x: (x["pct"], x["trust"]), reverse=True)[:300]
+    ranked = sorted(all_stocks, key=lambda x: (x["pct"], x["trust_shares"]), reverse=True)[:300]
 
     csv_headers = [
         "排名", "代號", "名稱", "成交", "漲跌價", "漲跌幅", "法人買賣日期",

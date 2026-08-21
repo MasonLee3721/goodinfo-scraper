@@ -37,6 +37,18 @@ def fetch_json(url):
             time.sleep(1)
     return []
 
+def parse_int(val):
+    """將字串解析為整數。若為空值、None、-- 或非數字，明確回傳 None（表示 missing null），絕不回傳 0"""
+    if val is None:
+        return None
+    val_str = str(val).replace(",", "").strip()
+    if not val_str or val_str in ("--", "null", "None"):
+        return None
+    try:
+        return int(val_str)
+    except ValueError:
+        return None
+
 def fetch_twse_tpex():
     """當 Goodinfo 被 Cloudflare 防火牆擋住時，自動改用證交所 (TWSE) 與櫃買中心 (TPEX) 官方 Open API 抓取外資投信同買"""
     print("Goodinfo 被擋，改用 TWSE/TPEX 官方 API 抓取外資投信同買資料...")
@@ -57,14 +69,18 @@ def fetch_twse_tpex():
         try:
             close_val = row[2].replace(",", "").strip() if len(row) > 2 else ""
             close = close_val if close_val not in ("--", "0", "") else ""
-            foreign = int(row[4].replace(",", "")) // 1000
-            trust = int(row[10].replace(",", "")) // 1000
-            dealer = int(row[11].replace(",", "")) // 1000
-            total = int(row[18].replace(",", "")) // 1000
-            if foreign > 0 and trust > 0:
+            # 保留精確買賣超股數 (shares)
+            foreign_shares = parse_int(row[4])
+            trust_shares = parse_int(row[10])
+            dealer_shares = parse_int(row[11])
+            total_shares = parse_int(row[18])
+            if foreign_shares is not None and foreign_shares > 0 and trust_shares is not None and trust_shares > 0:
                 all_stocks.append({
                     "code": code, "name": name, "close": close,
-                    "foreign": foreign, "trust": trust, "dealer": dealer, "total": total
+                    "foreign_shares": foreign_shares,
+                    "trust_shares": trust_shares,
+                    "dealer_shares": dealer_shares or 0,
+                    "total_shares": total_shares or 0
                 })
         except Exception:
             continue
@@ -83,20 +99,23 @@ def fetch_twse_tpex():
             code = item.get("SecuritiesCompanyCode", "").strip()
             name = item.get("CompanyName", "").strip()
             try:
-                foreign = int(item.get("ForeignInvestorsIncludeMainlandAreaInvestors-Difference", "0").replace(",", "")) // 1000
-                trust = int(item.get("SecuritiesInvestmentTrustCompanies-Difference", "0").replace(",", "")) // 1000
-                dealer = int(item.get("Dealers-Difference", "0").replace(",", "")) // 1000
-                total = int(item.get("TotalDifference", "0").replace(",", "")) // 1000
-                if foreign > 0 and trust > 0:
+                foreign_shares = parse_int(item.get("ForeignInvestorsIncludeMainlandAreaInvestors-Difference"))
+                trust_shares = parse_int(item.get("SecuritiesInvestmentTrustCompanies-Difference"))
+                dealer_shares = parse_int(item.get("Dealers-Difference"))
+                total_shares = parse_int(item.get("TotalDifference"))
+                if foreign_shares is not None and foreign_shares > 0 and trust_shares is not None and trust_shares > 0:
                     all_stocks.append({
                         "code": code, "name": name, "close": "",
-                        "foreign": foreign, "trust": trust, "dealer": dealer, "total": total
+                        "foreign_shares": foreign_shares,
+                        "trust_shares": trust_shares,
+                        "dealer_shares": dealer_shares or 0,
+                        "total_shares": total_shares or 0
                     })
             except Exception:
                 continue
 
-    # 按投信買超張數排序
-    ranked = sorted(all_stocks, key=lambda x: (x["trust"], x["foreign"]), reverse=True)[:300]
+    # 按精確投信買超股數 (shares) 降序排序取前 300 名
+    ranked = sorted(all_stocks, key=lambda x: (x["trust_shares"], x["foreign_shares"]), reverse=True)[:300]
 
     csv_headers = [
         "代號", "名稱", "成交", "漲跌價", "漲跌幅", "成交張數", "法人買賣日期",
@@ -108,13 +127,17 @@ def fetch_twse_tpex():
 
     csv_data = []
     for s in ranked:
+        foreign_lots = s["foreign_shares"] // 1000
+        trust_lots = s["trust_shares"] // 1000
+        dealer_lots = s["dealer_shares"] // 1000
+        total_lots = s["total_shares"] // 1000
         # 缺值顯式填入空字串 "" (Representing null), 絕不填 "0"
         row = [
             s["code"], s["name"], s["close"], "", "", "", mm_dd,
-            "", "", f"+{s['foreign']}" if s['foreign'] > 0 else str(s['foreign']),
-            "", "", f"+{s['trust']}" if s['trust'] > 0 else str(s['trust']),
-            "", "", f"+{s['dealer']}" if s['dealer'] > 0 else str(s['dealer']),
-            "", "", f"+{s['total']}" if s['total'] > 0 else str(s['total']),
+            "", "", f"+{foreign_lots}" if foreign_lots > 0 else str(foreign_lots),
+            "", "", f"+{trust_lots}" if trust_lots > 0 else str(trust_lots),
+            "", "", f"+{dealer_lots}" if dealer_lots > 0 else str(dealer_lots),
+            "", "", f"+{total_lots}" if total_lots > 0 else str(total_lots),
             "＋＋＋"
         ]
         csv_data.append(row)
