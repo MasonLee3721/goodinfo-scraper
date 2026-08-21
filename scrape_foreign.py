@@ -2,7 +2,7 @@
 爬取 Goodinfo 外資、投信同步買超當日排行，存成每日 CSV 並 push 到 GitHub
 執行：uv run --with requests --with beautifulsoup4 --with lxml python3 scrape_foreign.py
 """
-import requests, time, csv, os, subprocess
+import requests, time, csv, os, subprocess, json
 from datetime import date
 from bs4 import BeautifulSoup
 
@@ -22,13 +22,107 @@ HEADERS = {
     "Referer": "https://goodinfo.tw/tw/StockList.asp",
 }
 
+def fetch_json(url):
+    """使用 curl --http1.1 安全擷取官方 Open API JSON 資料，避免 HTTP/2 connection broken"""
+    for _ in range(3):
+        try:
+            out = subprocess.check_output(
+                ["curl", "-s", "--http1.1", "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", url],
+                timeout=20
+            )
+            data = json.loads(out)
+            if data:
+                return data
+        except Exception:
+            time.sleep(1)
+    return []
+
+def fetch_twse_tpex():
+    """當 Goodinfo 被 Cloudflare 防火牆擋住時，自動改用證交所 (TWSE) 與櫃買中心 (TPEX) 官方 Open API 抓取外資投信同買"""
+    print("Goodinfo 被擋，改用 TWSE/TPEX 官方 API 抓取外資投信同買資料...")
+
+    # 1. 抓取 TWSE 三大法人買賣超 (上市)
+    r_twse = fetch_json("https://www.twse.com.tw/rwd/zh/fund/T86?response=json&selectType=ALL")
+    twse_date = r_twse.get("date", "") if isinstance(r_twse, dict) else ""
+    if twse_date:
+        mm_dd = f"{twse_date[4:6]}/{twse_date[6:]}"
+    else:
+        mm_dd = date.today().strftime("%m/%d")
+
+    all_stocks = []
+    twse_data = r_twse.get("data", []) if isinstance(r_twse, dict) else []
+    for row in twse_data:
+        code = row[0].strip()
+        name = row[1].strip()
+        try:
+            close = row[2].replace(",", "").strip() if len(row) > 2 else "0"
+            foreign = int(row[4].replace(",", "")) // 1000
+            trust = int(row[10].replace(",", "")) // 1000
+            dealer = int(row[11].replace(",", "")) // 1000
+            total = int(row[18].replace(",", "")) // 1000
+            if foreign > 0 and trust > 0:
+                all_stocks.append({
+                    "code": code, "name": name, "close": close,
+                    "foreign": foreign, "trust": trust, "dealer": dealer, "total": total
+                })
+        except Exception:
+            continue
+
+    # 2. 抓取 TPEX 三大法人買賣超 (上櫃)
+    r_tpex = fetch_json("https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading")
+    if isinstance(r_tpex, list):
+        for item in r_tpex:
+            code = item.get("SecuritiesCompanyCode", "").strip()
+            name = item.get("CompanyName", "").strip()
+            try:
+                foreign = int(item.get("ForeignInvestorsIncludeMainlandAreaInvestors-Difference", "0").replace(",", "")) // 1000
+                trust = int(item.get("SecuritiesInvestmentTrustCompanies-Difference", "0").replace(",", "")) // 1000
+                dealer = int(item.get("Dealers-Difference", "0").replace(",", "")) // 1000
+                total = int(item.get("TotalDifference", "0").replace(",", "")) // 1000
+                if foreign > 0 and trust > 0:
+                    all_stocks.append({
+                        "code": code, "name": name, "close": "0",
+                        "foreign": foreign, "trust": trust, "dealer": dealer, "total": total
+                    })
+            except Exception:
+                continue
+
+    # 按投信買超張數排序
+    ranked = sorted(all_stocks, key=lambda x: (x["trust"], x["foreign"]), reverse=True)[:300]
+
+    csv_headers = [
+        "代號", "名稱", "成交", "漲跌價", "漲跌幅", "成交張數", "法人買賣日期",
+        "外資買進張數", "外資賣出張數", "外資買賣超張數",
+        "投信買進張數", "投信賣出張數", "投信買賣超張數",
+        "自營買進張數", "自營賣出張數", "自營買賣超張數",
+        "合計買進張數", "合計賣出張數", "合計買賣超張數", "法人買賣超註記"
+    ]
+
+    csv_data = []
+    for s in ranked:
+        row = [
+            s["code"], s["name"], s["close"], "0", "0", "0", mm_dd,
+            "0", "0", f"+{s['foreign']}" if s['foreign'] > 0 else str(s['foreign']),
+            "0", "0", f"+{s['trust']}" if s['trust'] > 0 else str(s['trust']),
+            "0", "0", f"+{s['dealer']}" if s['dealer'] > 0 else str(s['dealer']),
+            "0", "0", f"+{s['total']}" if s['total'] > 0 else str(s['total']),
+            "＋＋＋"
+        ]
+        csv_data.append(row)
+
+    return csv_headers, csv_data
+
 def fetch():
     session = requests.Session()
-    session.get("https://goodinfo.tw/tw/index.asp", headers=HEADERS, timeout=15)
+    try:
+        session.get("https://goodinfo.tw/tw/index.asp", headers=HEADERS, timeout=10,
+                    allow_redirects=False)
+    except Exception:
+        pass
     session.cookies.set("CLIENT_KEY", "2.5|41094.0082828283|46649.5638383838|8|46144.5|46144.5|",
                         domain="goodinfo.tw", path="/")
     time.sleep(1)
-    r = session.get(API, headers=HEADERS, timeout=30)
+    r = session.get(API, headers=HEADERS, timeout=60)
     r.encoding = "utf-8"
     return r.text
 
@@ -57,8 +151,11 @@ def save(headers, data, folder="data_foreign"):
             trade_date = cell
             break
     year = date.today().year
-    month, day = trade_date.split("/")
-    filename = f"{folder}/{year}-{month}-{day}.csv"
+    if "/" in trade_date:
+        month, day = trade_date.split("/")
+        filename = f"{folder}/{year}-{month}-{day}.csv"
+    else:
+        filename = f"{folder}/{trade_date}.csv"
     filepath = os.path.join(REPO_DIR, filename)
 
     if os.path.exists(filepath):
@@ -82,14 +179,21 @@ def git_push(filename):
     run(["git", "remote", "set-url", "origin", remote])
     run(["git", "add", filename])
     run(["git", "commit", "-m", f"data(foreign): {os.path.basename(filename)}"])
-    run(["git", "push"])
+    run(["git", "pull", "--rebase", "origin", "main"])
+    run(["git", "push", "origin", "main"])
     print(f"已 push 到 GitHub：{filename}")
 
 if __name__ == "__main__":
     print("抓取外資投信同買...")
-    html = fetch()
-    headers, data = parse(html)
+    try:
+        html = fetch()
+        headers, data = parse(html)
+    except Exception as e:
+        print(f"Goodinfo 抓取失敗 ({e})，自動切換至 TWSE/TPEX 官方 API")
+        headers, data = fetch_twse_tpex()
+
     print(f"共 {len(data)} 筆，欄位：{headers[:6]}")
     filename = save(headers, data)
     if filename:
         git_push(filename)
+
