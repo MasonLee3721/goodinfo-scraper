@@ -91,7 +91,7 @@ def filter_by_pct_threshold(stocks, threshold=Decimal("0.4")):
 
 def rank_stocks(stocks, top_n=300):
     """過濾有效且 > 0 的 Decimal('pct')，按 (-pct, -trust_shares, code) 確定性穩定排序取前 top_n 名。嚴格驗證型態與 top_n 邊界"""
-    if not isinstance(top_n, int) or isinstance(top_n, bool) or top_n <= 0:
+    if type(top_n) is not int or top_n <= 0:
         return []
 
     valid_stocks = []
@@ -106,18 +106,17 @@ def rank_stocks(stocks, top_n=300):
             raise TypeError("stock trust_shares is missing or None")
 
         trust_shares = s["trust_shares"]
-        if not isinstance(trust_shares, int) or isinstance(trust_shares, bool):
+        if type(trust_shares) is not int:
             raise TypeError(f"stock trust_shares must be int, got {type(trust_shares)}")
+
+        code = s.get("code")
+        if not code or not isinstance(code, str) or not code.strip():
+            raise TypeError(f"stock code must be non-empty str, got {type(code)}")
 
         if pct > Decimal("0"):
             valid_stocks.append(s)
 
-    # 確定性穩定排序鍵：1. -pct (降序), 2. -trust_shares (降序), 3. code (升序)
-    def sort_key(s):
-        code_str = str(s.get("code", "")).strip()
-        return (-s["pct"], -s["trust_shares"], code_str)
-
-    return sorted(valid_stocks, key=sort_key)[:top_n]
+    return sorted(valid_stocks, key=lambda s: (-s["pct"], -s["trust_shares"], str(s["code"]).strip()))[:top_n]
 
 def verify_dates(twse_date, tpex_date_ad, target_date=None):
     """驗證 TWSE 與 TPEX 日期是否一致，且是否符合指定的目標交易日 (target_date)"""
