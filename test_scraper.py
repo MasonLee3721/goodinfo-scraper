@@ -136,10 +136,9 @@ class TestScraperFunctions(unittest.TestCase):
         with self.assertRaises(TypeError):
             rank_stocks(invalid_code_stocks, top_n=10)
 
-    def test_end_to_end_pipeline_from_fixture(self):
-        """端到端測試 (End-to-End Pipeline Test)：
-        模擬官方 Open API JSON 輸入 -> 經由 parse_int -> calculate_pct -> rank_stocks -> format_pct_for_csv 產出 CSV 資料
-        驗證全鏈路計算、過濾、穩定排序與顯示格式化正確性
+    def test_multi_function_integration(self):
+        """多函式整合測試 (Multi-Function Integration Test)：
+        測試 parse_int -> calculate_pct -> rank_stocks -> format_pct_for_csv 之跨函式資料流轉正確性
         """
         # 1. 模擬發行股數 API 資料 Fixture
         raw_shares = [
