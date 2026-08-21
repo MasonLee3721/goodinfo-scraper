@@ -1,10 +1,10 @@
 """
-單元測試：驗證爬蟲處理函式之正確性 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾正式函式、排名排序、CSV 缺值輸出安全、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
+單元測試：驗證爬蟲處理函式之正確性 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾正式函式、高精度排序正式函式、CSV 缺值輸出安全、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
 執行方式：.venv/bin/python test_scraper.py
 """
 import unittest
 from decimal import Decimal
-from scrape_goodinfo import parse_int, calculate_pct, format_pct_for_csv, filter_by_pct_threshold, verify_dates
+from scrape_goodinfo import parse_int, calculate_pct, format_pct_for_csv, filter_by_pct_threshold, rank_stocks, verify_dates
 
 class TestScraperFunctions(unittest.TestCase):
 
@@ -58,13 +58,18 @@ class TestScraperFunctions(unittest.TestCase):
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["code"], "2317")
 
-    def test_calculate_pct_ranking_order(self):
-        """跨層排名測試：0.004% 與 0.005% 顯示可能相同，但原始排名必須保持不同 (0.004 < 0.005)"""
-        pct_A = calculate_pct(400, 10_000_000) # Decimal("0.004")
-        pct_B = calculate_pct(500, 10_000_000) # Decimal("0.005")
-
-        self.assertNotEqual(pct_A, pct_B)
-        self.assertLess(pct_A, pct_B)
+    def test_rank_stocks_formal_function(self):
+        """直接呼叫正式高精度排序函式 rank_stocks 驗證：
+        0.004% 與 0.005% 在高精度 Decimal 排序下，0.005% 的股票必須精確排在 0.004% 前面
+        """
+        stocks = [
+            {"code": "2330", "pct": Decimal("0.004"), "trust_shares": 400},
+            {"code": "2317", "pct": Decimal("0.005"), "trust_shares": 500}
+        ]
+        ranked = rank_stocks(stocks, top_n=2)
+        self.assertEqual(len(ranked), 2)
+        self.assertEqual(ranked[0]["code"], "2317")
+        self.assertEqual(ranked[1]["code"], "2330")
 
     def test_calculate_pct_missing(self):
         """直接呼叫正式 calculate_pct：缺值測試 (分子或分母為 None) 必須傳回 None"""

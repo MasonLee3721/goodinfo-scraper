@@ -75,6 +75,11 @@ def filter_by_pct_threshold(stocks, threshold=Decimal("0.4")):
     """以核心原始 Decimal('pct') 進行門檻篩選，避免誤用顯示層四捨五入值"""
     return [s for s in stocks if s.get("pct") is not None and s["pct"] >= threshold]
 
+def rank_stocks(stocks, top_n=300):
+    """過濾有效且 > 0 的 Decimal('pct')，按 (pct, trust_shares) 降序排序並取前 top_n 名"""
+    valid_stocks = [s for s in stocks if s.get("pct") is not None and s["pct"] > Decimal("0")]
+    return sorted(valid_stocks, key=lambda x: (x["pct"], x.get("trust_shares", 0)), reverse=True)[:top_n]
+
 def verify_dates(twse_date, tpex_date_ad, target_date=None):
     """驗證 TWSE 與 TPEX 日期是否一致，且是否符合指定的目標交易日 (target_date)"""
     if twse_date != tpex_date_ad:
@@ -160,9 +165,8 @@ def fetch_twse_tpex(target_date=None):
         except ValueError:
             s["pct"] = None
 
-    # 排序取前 300 名（過濾有效且 > 0 的 pct）
-    valid_stocks = [s for s in all_stocks if s["pct"] is not None and s["pct"] > Decimal("0")]
-    ranked = sorted(valid_stocks, key=lambda x: (x["pct"], x["trust_shares"]), reverse=True)[:300]
+    # 呼叫正式 rank_stocks 進行高精度排序取前 300 名
+    ranked = rank_stocks(all_stocks, top_n=300)
 
     csv_headers = [
         "排名", "代號", "名稱", "成交", "漲跌價", "漲跌幅", "法人買賣日期",
