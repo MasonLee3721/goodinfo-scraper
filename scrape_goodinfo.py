@@ -161,9 +161,13 @@ def fetch_twse_tpex(target_date=None):
 
     csv_data = []
     for rank, s in enumerate(ranked, 1):
-        # 只在顯示層（CSV 輸出）才格式化為小數點後 2 位
-        pct_formatted = s["pct"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        pct_str = f"+{pct_formatted}" if pct_formatted > 0 else str(pct_formatted)
+        # 顯示層格式化：只有 pct is not None 才能呼叫 quantize()；缺值輸出空字串 ""
+        if s["pct"] is not None:
+            pct_formatted = s["pct"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            pct_str = f"+{pct_formatted}" if pct_formatted > 0 else str(pct_formatted)
+        else:
+            pct_str = ""
+
         # 缺值顯式填入空字串 "" (Representing null), 絕不填 "0"
         row = [
             str(rank), s["code"], s["name"], s["close"], "", "", mm_dd,
