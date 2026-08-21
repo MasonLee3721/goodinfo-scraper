@@ -71,7 +71,8 @@ def fetch_twse_tpex():
         code = row[0].strip()
         name = row[1].strip()
         try:
-            close = row[2].replace(",", "").strip() if len(row) > 2 else "0"
+            close_val = row[2].replace(",", "").strip() if len(row) > 2 else ""
+            close = close_val if close_val not in ("--", "0", "") else ""
             trust = int(row[10].replace(",", "")) // 1000
             if trust > 0:
                 all_stocks.append({"code": code, "name": name, "close": close, "trust": trust})
@@ -80,14 +81,21 @@ def fetch_twse_tpex():
 
     # 3. 抓取 TPEX 三大法人買賣超 (上櫃)
     r_tpex = fetch_json("https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading")
-    if isinstance(r_tpex, list):
+    if isinstance(r_tpex, list) and r_tpex:
+        # 驗證 TWSE 與 TPEX 資料日期一致性
+        tpex_date_roc = r_tpex[0].get("Date", "").strip()
+        if len(tpex_date_roc) == 7 and tpex_date_roc.isdigit():
+            tpex_date_ad = f"{int(tpex_date_roc[:3]) + 1911}{tpex_date_roc[3:]}"
+            if twse_date and twse_date != tpex_date_ad:
+                raise ValueError(f"TWSE 日期 ({twse_date}) 與 TPEX 日期 ({tpex_date_ad}) 不一致，資料尚未同步完成")
+
         for item in r_tpex:
             code = item.get("SecuritiesCompanyCode", "").strip()
             name = item.get("CompanyName", "").strip()
             try:
                 trust = int(item.get("SecuritiesInvestmentTrustCompanies-Difference", "0").replace(",", "")) // 1000
                 if trust > 0:
-                    all_stocks.append({"code": code, "name": name, "close": "0", "trust": trust})
+                    all_stocks.append({"code": code, "name": name, "close": "", "trust": trust})
             except Exception:
                 continue
 
@@ -110,9 +118,10 @@ def fetch_twse_tpex():
     csv_data = []
     for rank, s in enumerate(ranked, 1):
         pct_str = f"+{s['pct']}" if s['pct'] > 0 else str(s['pct'])
+        # 缺值顯式填入空字串 "" (Representing null), 絕不填 "0"
         row = [
-            str(rank), s["code"], s["name"], s["close"], "0", "0", mm_dd,
-            pct_str, "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0"
+            str(rank), s["code"], s["name"], s["close"], "", "", mm_dd,
+            pct_str, "", "", "", "", "", "", "", "", "", "", ""
         ]
         csv_data.append(row)
 

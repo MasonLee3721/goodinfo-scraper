@@ -55,7 +55,8 @@ def fetch_twse_tpex():
         code = row[0].strip()
         name = row[1].strip()
         try:
-            close = row[2].replace(",", "").strip() if len(row) > 2 else "0"
+            close_val = row[2].replace(",", "").strip() if len(row) > 2 else ""
+            close = close_val if close_val not in ("--", "0", "") else ""
             foreign = int(row[4].replace(",", "")) // 1000
             trust = int(row[10].replace(",", "")) // 1000
             dealer = int(row[11].replace(",", "")) // 1000
@@ -70,7 +71,14 @@ def fetch_twse_tpex():
 
     # 2. 抓取 TPEX 三大法人買賣超 (上櫃)
     r_tpex = fetch_json("https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading")
-    if isinstance(r_tpex, list):
+    if isinstance(r_tpex, list) and r_tpex:
+        # 驗證 TWSE 與 TPEX 資料日期一致性
+        tpex_date_roc = r_tpex[0].get("Date", "").strip()
+        if len(tpex_date_roc) == 7 and tpex_date_roc.isdigit():
+            tpex_date_ad = f"{int(tpex_date_roc[:3]) + 1911}{tpex_date_roc[3:]}"
+            if twse_date and twse_date != tpex_date_ad:
+                raise ValueError(f"TWSE 日期 ({twse_date}) 與 TPEX 日期 ({tpex_date_ad}) 不一致，資料尚未同步完成")
+
         for item in r_tpex:
             code = item.get("SecuritiesCompanyCode", "").strip()
             name = item.get("CompanyName", "").strip()
@@ -81,7 +89,7 @@ def fetch_twse_tpex():
                 total = int(item.get("TotalDifference", "0").replace(",", "")) // 1000
                 if foreign > 0 and trust > 0:
                     all_stocks.append({
-                        "code": code, "name": name, "close": "0",
+                        "code": code, "name": name, "close": "",
                         "foreign": foreign, "trust": trust, "dealer": dealer, "total": total
                     })
             except Exception:
@@ -100,12 +108,13 @@ def fetch_twse_tpex():
 
     csv_data = []
     for s in ranked:
+        # 缺值顯式填入空字串 "" (Representing null), 絕不填 "0"
         row = [
-            s["code"], s["name"], s["close"], "0", "0", "0", mm_dd,
-            "0", "0", f"+{s['foreign']}" if s['foreign'] > 0 else str(s['foreign']),
-            "0", "0", f"+{s['trust']}" if s['trust'] > 0 else str(s['trust']),
-            "0", "0", f"+{s['dealer']}" if s['dealer'] > 0 else str(s['dealer']),
-            "0", "0", f"+{s['total']}" if s['total'] > 0 else str(s['total']),
+            s["code"], s["name"], s["close"], "", "", "", mm_dd,
+            "", "", f"+{s['foreign']}" if s['foreign'] > 0 else str(s['foreign']),
+            "", "", f"+{s['trust']}" if s['trust'] > 0 else str(s['trust']),
+            "", "", f"+{s['dealer']}" if s['dealer'] > 0 else str(s['dealer']),
+            "", "", f"+{s['total']}" if s['total'] > 0 else str(s['total']),
             "＋＋＋"
         ]
         csv_data.append(row)
