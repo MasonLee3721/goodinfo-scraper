@@ -1,5 +1,5 @@
 """
-單元測試：驗證爬蟲處理函式之正確性 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾正式函式、高精度排序正式函式、CSV 缺值輸出安全、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
+單元測試：驗證爬蟲處理函式之正確性 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾正式函式、高精度排序與 None 防護正式函式、CSV 缺值/真零/正值格式化輸出安全、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
 執行方式：.venv/bin/python test_scraper.py
 """
 import unittest
@@ -40,7 +40,7 @@ class TestScraperFunctions(unittest.TestCase):
         """直接呼叫正式顯示層函式 format_pct_for_csv 驗證輸出規格：
         - Decimal('0.005') -> '+0.01'
         - Decimal('0') -> '0.00'
-        - None -> '' (空字串)
+        - None -> '' (空字串，不變成 0 或 0.00)
         """
         self.assertEqual(format_pct_for_csv(Decimal("0.005")), "+0.01")
         self.assertEqual(format_pct_for_csv(Decimal("0")), "0.00")
@@ -70,6 +70,19 @@ class TestScraperFunctions(unittest.TestCase):
         self.assertEqual(len(ranked), 2)
         self.assertEqual(ranked[0]["code"], "2317")
         self.assertEqual(ranked[1]["code"], "2330")
+
+    def test_rank_stocks_none_safety(self):
+        """直接呼叫正式高精度排序函式 rank_stocks 驗證：
+        當候選股票清單包含 pct=None 缺值個股時，不會引發 None 與 Decimal 比較的 TypeError 崩潰，且缺值股票被安全排除不編列排名
+        """
+        stocks = [
+            {"code": "2330", "pct": None, "trust_shares": 400},
+            {"code": "2317", "pct": Decimal("0.005"), "trust_shares": 500},
+            {"code": "2454", "pct": Decimal("0"), "trust_shares": 0}
+        ]
+        ranked = rank_stocks(stocks, top_n=2)
+        self.assertEqual(len(ranked), 1)
+        self.assertEqual(ranked[0]["code"], "2317")
 
     def test_calculate_pct_missing(self):
         """直接呼叫正式 calculate_pct：缺值測試 (分子或分母為 None) 必須傳回 None"""
