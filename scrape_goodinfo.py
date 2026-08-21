@@ -90,7 +90,10 @@ def filter_by_pct_threshold(stocks, threshold=Decimal("0.4")):
     return valid_filtered
 
 def rank_stocks(stocks, top_n=300):
-    """過濾有效且 > 0 的 Decimal('pct')，按 (pct 降序, trust_shares 降序, code 升序) 穩定排序並取前 top_n 名。嚴格驗證 pct 型態"""
+    """過濾有效且 > 0 的 Decimal('pct')，按 (pct 降序, trust_shares 降序, code 升序) 穩定排序並取前 top_n 名。嚴格驗證型態與 top_n 邊界"""
+    if not isinstance(top_n, int) or top_n <= 0:
+        return []
+
     valid_stocks = []
     for s in stocks:
         pct = s.get("pct")
@@ -98,6 +101,11 @@ def rank_stocks(stocks, top_n=300):
             continue
         if not isinstance(pct, Decimal):
             raise TypeError(f"stock pct must be Decimal or None, got {type(pct)}")
+
+        trust_shares = s.get("trust_shares", 0)
+        if trust_shares is not None and not isinstance(trust_shares, int):
+            raise TypeError(f"stock trust_shares must be int or None, got {type(trust_shares)}")
+
         if pct > Decimal("0"):
             valid_stocks.append(s)
 
@@ -107,7 +115,7 @@ def rank_stocks(stocks, top_n=300):
         code_val = int(code_str) if code_str.isdigit() else code_str
         # 在 reverse=True 下，code 需做反向 (如果是 int 取負數) 以實現升序
         code_rank_key = -code_val if isinstance(code_val, int) else code_val
-        return (s["pct"], s.get("trust_shares", 0), code_rank_key)
+        return (s["pct"], s.get("trust_shares", 0) or 0, code_rank_key)
 
     return sorted(valid_stocks, key=sort_key, reverse=True)[:top_n]
 
