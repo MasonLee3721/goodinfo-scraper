@@ -52,16 +52,20 @@ class TestScraperFunctions(unittest.TestCase):
     def test_filter_by_pct_threshold_strict_types(self):
         """直接呼叫正式門檻篩選函式 filter_by_pct_threshold 驗證：
         - 原始值 Decimal('0.395') 即使顯示層顯示為 '+0.40'，門檻比對 >= Decimal('0.4') 時仍不得通過
-        - 自動將 float/str threshold 轉為 Decimal 比對
+        - 傳入非 Decimal 型態的 threshold 拋出 TypeError
         - 遇到非 Decimal/None 的 pct 拋出 TypeError
         """
         stocks = [
             {"code": "2330", "pct": Decimal("0.395")},
             {"code": "2317", "pct": Decimal("0.400")}
         ]
-        filtered = filter_by_pct_threshold(stocks, threshold=0.4)
+        filtered = filter_by_pct_threshold(stocks, threshold=Decimal("0.4"))
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["code"], "2317")
+
+        # 傳入非 Decimal 型態的 threshold 拋出 TypeError
+        with self.assertRaises(TypeError):
+            filter_by_pct_threshold(stocks, threshold=0.4)
 
         invalid_stocks = [{"code": "9999", "pct": "0.5"}]
         with self.assertRaises(TypeError):

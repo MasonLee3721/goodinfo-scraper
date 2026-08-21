@@ -74,9 +74,9 @@ def format_pct_for_csv(raw_pct):
     return f"{formatted:.2f}"
 
 def filter_by_pct_threshold(stocks, threshold=Decimal("0.4")):
-    """以核心原始 Decimal('pct') 進行門檻篩選，避免誤用顯示層四捨五入值。強制比對門檻為 Decimal"""
+    """以核心原始 Decimal('pct') 進行門檻篩選，避免誤用顯示層四捨五入值。嚴格驗證 threshold 必須為 Decimal"""
     if not isinstance(threshold, Decimal):
-        threshold = Decimal(str(threshold))
+        raise TypeError(f"threshold must be Decimal, got {type(threshold)}")
 
     valid_filtered = []
     for s in stocks:
