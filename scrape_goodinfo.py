@@ -24,12 +24,16 @@ HEADERS = {
 }
 
 def fetch_json(url):
-    """使用 curl --http1.1 安全擷取官方 Open API JSON 資料，避免 HTTP/2 connection broken"""
-    for _ in range(3):
+    """使用 curl --silent --show-error --fail-with-body --http1.1 安全擷取官方 Open API JSON 資料，避免 HTTP 錯誤被隱藏與連線中斷"""
+    for attempt in range(3):
         try:
             out = subprocess.check_output(
-                ["curl", "-s", "--http1.1", "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", url],
-                timeout=20
+                [
+                    "curl", "--silent", "--show-error", "--fail-with-body", "--http1.1",
+                    "--connect-timeout", "10", "-m", "20",
+                    "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", url
+                ],
+                timeout=25
             )
             data = json.loads(out)
             if data:
