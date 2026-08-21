@@ -90,9 +90,11 @@ def filter_by_pct_threshold(stocks, threshold=Decimal("0.4")):
     return valid_filtered
 
 def rank_stocks(stocks, top_n=300):
-    """過濾有效且 > 0 的 Decimal('pct')，按 (-pct, -trust_shares, code) 確定性穩定排序取前 top_n 名。嚴格驗證型態與 top_n 邊界"""
-    if type(top_n) is not int or top_n <= 0:
-        return []
+    """過濾有效 (pct > Decimal('0')) 的股票，按 (-pct, -trust_shares, code) 確定性穩定排序取前 top_n 名。嚴格驗證型態與邊界"""
+    if isinstance(top_n, bool) or not isinstance(top_n, int):
+        raise TypeError(f"top_n must be int, got {type(top_n)}")
+    if top_n <= 0:
+        raise ValueError(f"top_n must be positive int, got {top_n}")
 
     valid_stocks = []
     for s in stocks:
@@ -106,17 +108,16 @@ def rank_stocks(stocks, top_n=300):
             raise TypeError("stock trust_shares is missing or None")
 
         trust_shares = s["trust_shares"]
-        if type(trust_shares) is not int:
+        if isinstance(trust_shares, bool) or not isinstance(trust_shares, int):
             raise TypeError(f"stock trust_shares must be int, got {type(trust_shares)}")
 
-        code = s.get("code")
-        if not code or not isinstance(code, str) or not code.strip():
-            raise TypeError(f"stock code must be non-empty str, got {type(code)}")
+        if "code" not in s or s["code"] is None or not isinstance(s["code"], str) or not s["code"].strip():
+            raise TypeError("stock code must be non-empty str")
 
         if pct > Decimal("0"):
             valid_stocks.append(s)
 
-    return sorted(valid_stocks, key=lambda s: (-s["pct"], -s["trust_shares"], str(s["code"]).strip()))[:top_n]
+    return sorted(valid_stocks, key=lambda s: (-s["pct"], -s["trust_shares"], s["code"]))[:top_n]
 
 def verify_dates(twse_date, tpex_date_ad, target_date=None):
     """驗證 TWSE 與 TPEX 日期是否一致，且是否符合指定的目標交易日 (target_date)"""

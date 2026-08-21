@@ -1,5 +1,5 @@
 """
-單元測試與端到端測試：驗證爬蟲處理函式與完整數據鏈路 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾強型別檢查、高精度與三級穩定排序 (-pct, -trust_shares, code)、top_n/bool/trust_shares/code 邊界與型別檢查、端到端 CSV 產出、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
+單元測試與多函式整合測試：驗證爬蟲處理函式與資料鏈路 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾強型別檢查、高精度與三級確定性排序 (-pct, -trust_shares, code)、top_n/bool/trust_shares/code 嚴格型別與邊界檢查、多函式整合 CSV 產出、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
 執行方式：.venv/bin/python test_scraper.py
 """
 import unittest
@@ -71,7 +71,7 @@ class TestScraperFunctions(unittest.TestCase):
             filter_by_pct_threshold(invalid_stocks, threshold=Decimal("0.4"))
 
     def test_rank_stocks_secondary_and_tertiary_sorting(self):
-        """直接呼叫正式高精度排序函式 rank_stocks 驗證 key=lambda s: (-s['pct'], -s['trust_shares'], str(s['code'])) 三級確定性穩定排序：
+        """直接呼叫正式高精度排序函式 rank_stocks 驗證 key=lambda s: (-s['pct'], -s['trust_shares'], s['code']) 三級確定性穩定排序：
         1. -pct (降序)
         2. -trust_shares (降序)
         3. code 字典序 (升序，如 2317 優先於 2330，2330 優先於 2330A)
@@ -101,17 +101,25 @@ class TestScraperFunctions(unittest.TestCase):
 
     def test_rank_stocks_top_n_and_type_boundaries(self):
         """直接呼叫正式高精度排序函式 rank_stocks 驗證邊界與型別處置：
-        - top_n 為 0, 負數, 浮點數或 bool (True/False) 時回傳空陣列 []
+        - top_n 為 0 或負數時拋出 ValueError
+        - top_n 為浮點數、字串或 bool (True/False) 時拋出 TypeError
         - trust_shares 缺失或為 None 時拋出 TypeError (防範冒充 0)
         - trust_shares 非 int/bool 時拋出 TypeError
         - code 非非空 str 時拋出 TypeError
         """
         stocks = [{"code": "2330", "pct": Decimal("0.5"), "trust_shares": 500}]
-        self.assertEqual(rank_stocks(stocks, top_n=0), [])
-        self.assertEqual(rank_stocks(stocks, top_n=-5), [])
-        self.assertEqual(rank_stocks(stocks, top_n=3.5), [])
-        self.assertEqual(rank_stocks(stocks, top_n=True), [])
-        self.assertEqual(rank_stocks(stocks, top_n=False), [])
+        
+        with self.assertRaises(ValueError):
+            rank_stocks(stocks, top_n=0)
+        with self.assertRaises(ValueError):
+            rank_stocks(stocks, top_n=-5)
+
+        with self.assertRaises(TypeError):
+            rank_stocks(stocks, top_n=3.5)
+        with self.assertRaises(TypeError):
+            rank_stocks(stocks, top_n=True)
+        with self.assertRaises(TypeError):
+            rank_stocks(stocks, top_n=False)
 
         # trust_shares 缺失或為 None
         missing_trust_stocks = [{"code": "2330", "pct": Decimal("0.5")}]
@@ -135,6 +143,10 @@ class TestScraperFunctions(unittest.TestCase):
         invalid_code_stocks = [{"code": 2330, "pct": Decimal("0.5"), "trust_shares": 500}]
         with self.assertRaises(TypeError):
             rank_stocks(invalid_code_stocks, top_n=10)
+
+        empty_code_stocks = [{"code": "   ", "pct": Decimal("0.5"), "trust_shares": 500}]
+        with self.assertRaises(TypeError):
+            rank_stocks(empty_code_stocks, top_n=10)
 
     def test_multi_function_integration(self):
         """多函式整合測試 (Multi-Function Integration Test)：
@@ -179,7 +191,7 @@ class TestScraperFunctions(unittest.TestCase):
         self.assertEqual(ranked[0]["code"], "2317") # pct 0.01% 第一
         self.assertEqual(ranked[1]["code"], "2330") # pct 0.005% 第二
 
-        # 4. 呼叫正式 format_pct_for_csv 端到端格式化 CSV 列
+        # 4. 呼叫正式 format_pct_for_csv 格式化 CSV 列
         csv_rows = []
         for rank, s in enumerate(ranked, 1):
             pct_str = format_pct_for_csv(s["pct"])
