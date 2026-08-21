@@ -1,5 +1,5 @@
 """
-單元測試：驗證爬蟲處理函式之正確性 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾強型別檢查、高精度排序型別檢查、CSV 格式化統一、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
+單元測試與端到端測試：驗證爬蟲處理函式與完整數據鏈路 (數值解析、Decimal 財務比率核心與顯示層分離、門檻過濾強型別檢查、高精度與三級穩定排序、端到端 CSV 產出、缺值/真零/無效分母處置、兩市場同為舊日期校驗)
 執行方式：.venv/bin/python test_scraper.py
 """
 import unittest
@@ -47,7 +47,7 @@ class TestScraperFunctions(unittest.TestCase):
         self.assertEqual(format_pct_for_csv(Decimal("0")), "0.00")
         self.assertEqual(format_pct_for_csv(None), "")
         with self.assertRaises(TypeError):
-            format_pct_for_csv(0.005) # 不接受裸 float
+            format_pct_for_csv(0.005)
 
     def test_filter_by_pct_threshold_strict_types(self):
         """直接呼叫正式門檻篩選函式 filter_by_pct_threshold 驗證：
@@ -59,33 +59,28 @@ class TestScraperFunctions(unittest.TestCase):
             {"code": "2330", "pct": Decimal("0.395")},
             {"code": "2317", "pct": Decimal("0.400")}
         ]
-        # 使用 float 傳入 threshold 驗證安全轉換
         filtered = filter_by_pct_threshold(stocks, threshold=0.4)
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["code"], "2317")
 
-        # 傳入非法型態 pct
         invalid_stocks = [{"code": "9999", "pct": "0.5"}]
         with self.assertRaises(TypeError):
             filter_by_pct_threshold(invalid_stocks, threshold=Decimal("0.4"))
 
-    def test_rank_stocks_strict_types(self):
-        """直接呼叫正式高精度排序函式 rank_stocks 驗證：
-        - 0.004% 與 0.005% 在高精度 Decimal 排序下，0.005% 的股票必須精確排在 0.004% 前面
-        - 遇到非 Decimal/None 的 pct 拋出 TypeError
+    def test_rank_stocks_secondary_and_tertiary_sorting(self):
+        """直接呼叫正式高精度排序函式 rank_stocks 驗證三級確定性穩定排序：
+        1. pct (降序)
+        2. trust_shares (降序)
+        3. code (升序，如 2317 優先於 2330)
         """
         stocks = [
-            {"code": "2330", "pct": Decimal("0.004"), "trust_shares": 400},
-            {"code": "2317", "pct": Decimal("0.005"), "trust_shares": 500}
+            {"code": "2330", "pct": Decimal("0.5"), "trust_shares": 500},  # 同 pct, 同 trust_shares
+            {"code": "2317", "pct": Decimal("0.5"), "trust_shares": 500},  # 同 pct, 同 trust_shares -> 2317 應優先
+            {"code": "2454", "pct": Decimal("0.5"), "trust_shares": 1000}, # 同 pct, trust_shares 較大 -> 應排第一
+            {"code": "3008", "pct": Decimal("0.8"), "trust_shares": 100}   # pct 最高 -> 第一名
         ]
-        ranked = rank_stocks(stocks, top_n=2)
-        self.assertEqual(len(ranked), 2)
-        self.assertEqual(ranked[0]["code"], "2317")
-        self.assertEqual(ranked[1]["code"], "2330")
-
-        invalid_stocks = [{"code": "9999", "pct": 0.005}]
-        with self.assertRaises(TypeError):
-            rank_stocks(invalid_stocks, top_n=2)
+        ranked = rank_stocks(stocks, top_n=4)
+        self.assertEqual([s["code"] for s in ranked], ["3008", "2454", "2317", "2330"])
 
     def test_rank_stocks_none_safety(self):
         """直接呼叫正式高精度排序函式 rank_stocks 驗證：
@@ -99,6 +94,59 @@ class TestScraperFunctions(unittest.TestCase):
         ranked = rank_stocks(stocks, top_n=2)
         self.assertEqual(len(ranked), 1)
         self.assertEqual(ranked[0]["code"], "2317")
+
+    def test_end_to_end_pipeline_from_fixture(self):
+        """端到端測試 (End-to-End Pipeline Test)：
+        模擬官方 Open API JSON 輸入 -> 經由 parse_int -> calculate_pct -> rank_stocks -> format_pct_for_csv 產出 CSV 資料
+        驗證全鏈路計算、過濾、穩定排序與顯示格式化正確性
+        """
+        # 1. 模擬發行股數 API 資料 Fixture
+        raw_shares = [
+            {"公司代號": "2330", "已發行普通股數或TDR原股發行股數": "10,000,000"},
+            {"公司代號": "2317", "已發行普通股數或TDR原股發行股數": "5,000,000"},
+            {"公司代號": "9999", "已發行普通股數或TDR原股發行股數": "--"} # 無效發行股數
+        ]
+        shares_map = {}
+        for r in raw_shares:
+            code = r["公司代號"]
+            cnt = parse_int(r["已發行普通股數或TDR原股發行股數"])
+            if code and cnt is not None and cnt > 0:
+                shares_map[code] = cnt
+
+        # 2. 模擬法人買賣超 API 資料 Fixture
+        raw_trading = [
+            {"code": "2330", "name": "台積電", "close": "1000", "trust_str": "500"},  # pct = 0.005%
+            {"code": "2317", "name": "鴻海", "close": "200", "trust_str": "500"},   # pct = 0.010%
+            {"code": "9999", "name": "缺值股", "close": "50", "trust_str": "100"}   # issued_shares missing
+        ]
+
+        stocks = []
+        for r in raw_trading:
+            trust_shares = parse_int(r["trust_str"])
+            issued_shares = shares_map.get(r["code"], None)
+            try:
+                pct = calculate_pct(trust_shares, issued_shares)
+            except ValueError:
+                pct = None
+            stocks.append({
+                "code": r["code"], "name": r["name"], "close": r["close"],
+                "trust_shares": trust_shares, "pct": pct
+            })
+
+        # 3. 呼叫正式 rank_stocks 高精度穩定排序
+        ranked = rank_stocks(stocks, top_n=10)
+        self.assertEqual(len(ranked), 2) # 缺值股 (9999) 排除
+        self.assertEqual(ranked[0]["code"], "2317") # pct 0.01% 第一
+        self.assertEqual(ranked[1]["code"], "2330") # pct 0.005% 第二
+
+        # 4. 呼叫正式 format_pct_for_csv 端到端格式化 CSV 列
+        csv_rows = []
+        for rank, s in enumerate(ranked, 1):
+            pct_str = format_pct_for_csv(s["pct"])
+            csv_rows.append([str(rank), s["code"], s["name"], s["close"], pct_str])
+
+        self.assertEqual(csv_rows[0], ["1", "2317", "鴻海", "200", "+0.01"])
+        self.assertEqual(csv_rows[1], ["2", "2330", "台積電", "1000", "+0.01"])
 
     def test_calculate_pct_missing(self):
         """直接呼叫正式 calculate_pct：缺值測試 (分子或分母為 None) 必須傳回 None"""

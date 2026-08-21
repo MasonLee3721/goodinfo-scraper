@@ -90,7 +90,7 @@ def filter_by_pct_threshold(stocks, threshold=Decimal("0.4")):
     return valid_filtered
 
 def rank_stocks(stocks, top_n=300):
-    """過濾有效且 > 0 的 Decimal('pct')，按 (pct, trust_shares) 降序排序並取前 top_n 名。嚴格驗證 pct 型態"""
+    """過濾有效且 > 0 的 Decimal('pct')，按 (pct 降序, trust_shares 降序, code 升序) 穩定排序並取前 top_n 名。嚴格驗證 pct 型態"""
     valid_stocks = []
     for s in stocks:
         pct = s.get("pct")
@@ -100,7 +100,16 @@ def rank_stocks(stocks, top_n=300):
             raise TypeError(f"stock pct must be Decimal or None, got {type(pct)}")
         if pct > Decimal("0"):
             valid_stocks.append(s)
-    return sorted(valid_stocks, key=lambda x: (x["pct"], x.get("trust_shares", 0)), reverse=True)[:top_n]
+
+    # 三級確定性穩定排序：1. pct (降序), 2. trust_shares (降序), 3. code (升序)
+    def sort_key(s):
+        code_str = str(s.get("code", ""))
+        code_val = int(code_str) if code_str.isdigit() else code_str
+        # 在 reverse=True 下，code 需做反向 (如果是 int 取負數) 以實現升序
+        code_rank_key = -code_val if isinstance(code_val, int) else code_val
+        return (s["pct"], s.get("trust_shares", 0), code_rank_key)
+
+    return sorted(valid_stocks, key=sort_key, reverse=True)[:top_n]
 
 def verify_dates(twse_date, tpex_date_ad, target_date=None):
     """驗證 TWSE 與 TPEX 日期是否一致，且是否符合指定的目標交易日 (target_date)"""
